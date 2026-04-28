@@ -1,0 +1,321 @@
+// packages/db/prisma/schema.prisma
+// CodePulse — Phase 1 MVP Database Schema
+// Design principle: every table is multi-tenant ready (institution_id exists everywhere via User relation).
+// RLS policies are prepared conceptually; not enforced in MVP to reduce complexity.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// Institution (Tenant)
+// ─────────────────────────────────────────────
+
+model Institution {
+  id            String   @id @default(uuid())
+  slug          String   @unique
+  name          String
+  /// { pattern: string, yearOffset: number, yearLogic: "lpu" | "generic" }
+  regnoConfig   Json
+  /// Optional scoring weight overrides per institution
+  scoringConfig Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users User[]
+
+  @@map("institutions")
+}
+
+// ─────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────
+
+model User {
+  id            String      @id @default(uuid())
+  institutionId String
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  email     String @unique
+  regno     String
+  fullName  String
+  branch    String?
+  section   String?
+  batchYear Int?   // e.g. 2024 (graduating year or enrollment year)
+  currentYear Int? // 1st, 2nd, 3rd, 4th
+
+  role   UserRole   @default(STUDENT)
+  status UserStatus @default(ACTIVE)
+
+  /// Per-platform visibility flags: { github: true, codeforces: false, leetcode: true }
+  visibility Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  handles    PlatformHandle[]
+  metrics    NormalizedMetric[]
+  score      Score?
+  ranks      Rank[]
+  badges     Badge[]
+  auditLogs  AuditLog[]        @relation("Actor")
+
+  @@unique([institutionId, regno])
+  @@index([institutionId, batchYear, branch])
+  @@map("users")
+}
+
+enum UserRole {
+  STUDENT
+  FACULTY
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+// ─────────────────────────────────────────────
+// Platform Handle
+// ─────────────────────────────────────────────
+
+model PlatformHandle {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform Platform
+  handle   String
+
+  verificationState  VerificationState  @default(UNVERIFIED)
+  verificationMethod VerificationMethod?
+  /// Token placed in bio for Tier-2 verification (e.g. "cp-9k2x7v-lpu")
+  verificationToken  String?
+  verifiedAt         DateTime?
+
+  /// Encrypted OAuth access token (AES-256-GCM). Null for non-OAuth platforms.
+  oauthTokenEncrypted Bytes?
+
+  lastFetchedAt       DateTime?
+  lastSuccessAt       DateTime?
+  consecutiveFailures Int         @default(0)
+  status              HandleStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  snapshots Snapshot[]
+
+  // A handle string can only belong to one user per platform (enforced globally)
+  @@unique([platform, handle])
+  @@index([userId])
+  @@index([verificationState])
+  @@index([platform, status])
+  @@map("platform_handles")
+}
+
+enum Platform {
+  GITHUB
+  CODEFORCES
+  LEETCODE
+}
+
+enum VerificationState {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  RE_CHECK
+  FLAGGED
+  REJECTED
+}
+
+enum VerificationMethod {
+  OAUTH
+  BIO_TOKEN
+  MANUAL
+}
+
+enum HandleStatus {
+  ACTIVE
+  DEAD     // 3+ consecutive 404s
+  DISABLED // manually disabled by admin
+}
+
+// ─────────────────────────────────────────────
+// Snapshot (raw API payload record)
+// ─────────────────────────────────────────────
+
+model Snapshot {
+  id       String         @id @default(uuid())
+  handleId String
+  handle   PlatformHandle @relation(fields: [handleId], references: [id], onDelete: Cascade)
+
+  fetchedAt      DateTime    @default(now())
+  /// Filesystem path or S3 key — implementation behind SnapshotStore interface
+  storageKey     String
+  /// SHA-256 of the raw payload bytes
+  payloadHash    String
+  fetchStatus    FetchStatus
+  errorCode      String?
+  /// Adapter version at time of fetch — used for replay decisions
+  scraperVersion String
+  durationMs     Int
+
+  @@index([handleId, fetchedAt])
+  @@map("snapshots")
+}
+
+enum FetchStatus {
+  OK
+  PARTIAL
+  FAILED
+}
+
+// ─────────────────────────────────────────────
+// Normalized Metrics (one row per user per platform)
+// ─────────────────────────────────────────────
+
+model NormalizedMetric {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform Platform
+
+  // Problem counts (canonical difficulty mapping)
+  solvedEasy   Int @default(0)
+  solvedMedium Int @default(0)
+  solvedHard   Int @default(0)
+
+  // Contest stats
+  contestRating    Int?
+  peakRating       Int?
+  contestsAttended Int @default(0)
+
+  /// { "dp": 0.7, "graph": 0.4, "greedy": 0.5, ... } — canonical 40-tag taxonomy
+  topicMastery Json @default("{}")
+
+  // Activity metrics
+  activeDays90   Int       @default(0)
+  currentStreak  Int       @default(0)
+  longestStreak  Int       @default(0)
+  lastActiveAt   DateTime?
+
+  /// Platform-issued badges as raw JSON array
+  badges Json @default("[]")
+
+  /// Percentile within the platform's global user base (if available)
+  platformPercentile Decimal? @db.Decimal(5, 2)
+
+  // For GitHub-specific metrics stored in topicMastery JSON:
+  // totalRepos, totalStars, contributions365, topLanguages, hasProfileReadme
+
+  normalizerVersion String
+  computedAt        DateTime @default(now())
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("normalized_metrics")
+}
+
+// ─────────────────────────────────────────────
+// Score (one row per user, upserted on recompute)
+// ─────────────────────────────────────────────
+
+model Score {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  codepulseScore Decimal @db.Decimal(6, 2)
+
+  /// { dsa, contest, consistency, breadth, build, recency } — each 0..1
+  components Json
+
+  verificationMult Decimal @db.Decimal(4, 3)
+  recencyDecay     Decimal @db.Decimal(4, 3)
+  scoringVersion   String
+
+  computedAt DateTime @default(now())
+
+  @@map("scores")
+}
+
+// ─────────────────────────────────────────────
+// Rank (one row per user per scope)
+// ─────────────────────────────────────────────
+
+model Rank {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  scope      RankScope
+  /// The value of the scope (e.g. "2024" for YEAR, "CSE" for BRANCH, "K21" for SECTION)
+  scopeValue String
+
+  rank       Int
+  percentile Decimal @db.Decimal(5, 2)
+  cohortSize Int
+  computedAt DateTime @default(now())
+
+  @@id([userId, scope, scopeValue])
+  @@index([scope, scopeValue, rank])
+  @@map("ranks")
+}
+
+enum RankScope {
+  CAMPUS
+  YEAR
+  BRANCH
+  SECTION
+}
+
+// ─────────────────────────────────────────────
+// Badge
+// ─────────────────────────────────────────────
+
+model Badge {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  badgeType String
+  scope     String?
+  earnedAt  DateTime @default(now())
+  metadata  Json?
+
+  @@unique([userId, badgeType, scope])
+  @@map("badges")
+}
+
+// ─────────────────────────────────────────────
+// Audit Log
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id       String @id @default(uuid())
+  actorId  String?
+  actor    User?   @relation("Actor", fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole String?
+
+  action     String
+  targetType String?
+  targetId   String?
+  payload    Json?
+  ip         String?
+
+  at DateTime @default(now())
+
+  @@index([at])
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}

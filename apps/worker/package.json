@@ -1,0 +1,29 @@
+{
+  "name": "@codepulse/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --outDir dist",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codepulse/adapters": "workspace:*",
+    "@codepulse/config": "workspace:*",
+    "@codepulse/db": "workspace:*",
+    "@codepulse/normalizer": "workspace:*",
+    "@codepulse/scoring": "workspace:*",
+    "@codepulse/types": "workspace:*",
+    "bullmq": "^5.12.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.15.7",
+    "typescript": "^5.5.3",
+    "vitest": "^1.6.0"
+  }
+}
