@@ -3,11 +3,12 @@
  * Used to enqueue jobs from the web app.
  */
 import { Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { QUEUE_NAMES } from '@codepulse/types';
 
-const redisConnection = {
-  url: process.env.REDIS_URL || 'redis://localhost:6379',
-};
+const redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+  maxRetriesPerRequest: null,
+});
 
 export const queues = {
   verifyHandle: new Queue(QUEUE_NAMES.VERIFY_HANDLE, { connection: redisConnection }),

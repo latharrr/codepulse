@@ -105,11 +105,13 @@ export function loadEnv(): Env {
         const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
         if (match) {
           const key = match[1];
-          let value = match[2] || '';
-          if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-          if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
-          if (process.env[key] === undefined) {
-            process.env[key] = value;
+          if (key) {
+            let value = match[2] || '';
+            if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+            if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+            if (process.env[key] === undefined) {
+              process.env[key] = value;
+            }
           }
         }
       });

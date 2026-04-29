@@ -33,7 +33,6 @@ async function main() {
         yearLogic: 'lpu',
         yearBase: 2000,
       },
-      scoringConfig: null,
     },
   });
 

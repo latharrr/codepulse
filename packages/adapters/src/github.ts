@@ -3,20 +3,23 @@
  *
  * Fetches user profile, repository statistics, and activity metrics
  * using the GitHub GraphQL API (v4).
+ *
+ * verifyBioToken: checks user.bio for the verification token.
  */
-import { 
-  PlatformAdapter, 
-  RawProfile, 
-  AdapterError, 
-  AdapterHealthCheck 
+import {
+  PlatformAdapter,
+  RawProfile,
+  AdapterError,
+  AdapterHealthCheck,
 } from './types';
-import { Platform } from '@codepulse/types';
 import { createLogger } from '@codepulse/config';
 
-const logger = createLogger({ module: 'adapter:github' });
+const logger = createLogger('adapter:github');
 
 export class GitHubAdapter implements PlatformAdapter {
-  readonly platform: Platform = 'GITHUB';
+  readonly name = 'github' as const;
+  readonly version = '1.0.0';
+
   private readonly baseUrl = 'https://api.github.com/graphql';
   private tokens: string[];
   private currentTokenIndex = 0;
@@ -29,7 +32,7 @@ export class GitHubAdapter implements PlatformAdapter {
   }
 
   private get nextToken(): string {
-    const token = this.tokens[this.currentTokenIndex];
+    const token = this.tokens[this.currentTokenIndex] as string;
     this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
     return token;
   }
@@ -93,65 +96,120 @@ export class GitHubAdapter implements PlatformAdapter {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.nextToken}`,
+          Authorization: `Bearer ${this.nextToken}`,
           'Content-Type': 'application/json',
-          'User-Agent': 'CodePulse-Intelligence-Platform'
+          'User-Agent': 'CodePulse-Intelligence-Platform',
         },
-        body: JSON.stringify({ query, variables: { login: handle } })
+        body: JSON.stringify({ query, variables: { login: handle } }),
       });
 
       if (!response.ok) {
         const text = await response.text();
-        const code = response.status === 401 || response.status === 403 ? 'UNAUTHORIZED' : 'SERVER_ERROR';
-        logger.error({ status: response.status, text, handle }, 'GitHub API returned error status');
-        throw new AdapterError(`GitHub API error: ${response.status} ${text}`, code, response.status >= 500, response.status);
+        const code =
+          response.status === 401 || response.status === 403
+            ? 'UNAUTHORIZED'
+            : 'SERVER_ERROR';
+        logger.error(
+          { status: response.status, text, handle },
+          'GitHub API returned error status',
+        );
+        throw new AdapterError(
+          `GitHub API error: ${response.status} ${text}`,
+          code,
+          response.status >= 500,
+          response.status,
+        );
       }
 
-      const result = await response.json();
+      const result = await response.json() as any;
 
       if (result.errors) {
-        const isNotFound = result.errors.some((e: any) => e.type === 'NOT_FOUND');
+        const isNotFound = result.errors.some(
+          (e: any) => e.type === 'NOT_FOUND',
+        );
         if (isNotFound) {
-          throw new AdapterError(`User ${handle} not found`, 'NOT_FOUND', false, 404);
+          throw new AdapterError(
+            `User ${handle} not found`,
+            'NOT_FOUND',
+            false,
+            404,
+          );
         }
-        throw new AdapterError(`GraphQL Error: ${result.errors[0].message}`, 'SERVER_ERROR', true);
+        throw new AdapterError(
+          `GraphQL Error: ${result.errors[0].message}`,
+          'SERVER_ERROR',
+          true,
+        );
       }
 
       return {
-        platform: this.platform,
+        platform: 'GITHUB',
         handle,
         data: result.data.user,
-        fetchedAt: new Date()
+        fetchedAt: new Date(),
       };
     } catch (error: any) {
       if (error instanceof AdapterError) throw error;
-      logger.error({ error: error.message, stack: error.stack, handle }, 'Failed to fetch GitHub profile');
-      throw new AdapterError(`Network error or internal failure: ${error.message}`, 'NETWORK_ERROR', true);
+      logger.error(
+        { error: error.message, stack: error.stack, handle },
+        'Failed to fetch GitHub profile',
+      );
+      throw new AdapterError(
+        `Network error or internal failure: ${error.message}`,
+        'NETWORK_ERROR',
+        true,
+      );
     }
   }
 
-  async checkHealth(): Promise<AdapterHealthCheck> {
+  /**
+   * Checks whether the user's GitHub bio contains the verification token.
+   * Returns false (never throws) if the bio cannot be fetched.
+   */
+  async verifyBioToken(handle: string, token: string): Promise<boolean> {
+    const query = `
+      query($login: String!) {
+        user(login: $login) { bio }
+      }
+    `;
     try {
-      // Simple rate limit check
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.nextToken}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'CodePulse-Intelligence-Platform',
+        },
+        body: JSON.stringify({ query, variables: { login: handle } }),
+      });
+      if (!response.ok) return false;
+      const result = await response.json() as any;
+      const bio: string = result?.data?.user?.bio ?? '';
+      return bio.includes(token);
+    } catch {
+      return false;
+    }
+  }
+
+  async healthCheck(): Promise<AdapterHealthCheck> {
+    const start = Date.now();
+    try {
       const response = await fetch('https://api.github.com/rate_limit', {
         headers: {
-          'Authorization': `Bearer ${this.tokens[0]}`,
-          'User-Agent': 'CodePulse-Intelligence-Platform'
-        }
+          Authorization: `Bearer ${this.tokens[0]}`,
+          'User-Agent': 'CodePulse-Intelligence-Platform',
+        },
       });
-      
-      const status = response.ok ? 'healthy' : 'degraded';
       return {
-        platform: this.platform,
-        status,
-        latencyMs: 0, // Placeholder
+        ok: response.ok,
+        latencyMs: Date.now() - start,
+        error: response.ok ? undefined : `HTTP ${response.status}`,
       };
-    } catch (error) {
+    } catch (error: any) {
       return {
-        platform: this.platform,
-        status: 'unhealthy',
-        latencyMs: 0,
-        error: 'Connection failed'
+        ok: false,
+        latencyMs: Date.now() - start,
+        error: error.message,
       };
     }
   }

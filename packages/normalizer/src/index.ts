@@ -1,10 +1,10 @@
 import { RawProfile } from '@codepulse/adapters';
-import { NormalizedMetrics } from '@codepulse/types';
+import { NormalizedMetricsOutput } from '@codepulse/types';
 
 export { NORMALIZER_VERSION } from './version';
 
 export interface ProfileNormalizer {
-  normalize(raw: RawProfile): NormalizedMetrics;
+  normalize(raw: RawProfile): NormalizedMetricsOutput;
 }
 
 export * from './github';

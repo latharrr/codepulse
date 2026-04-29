@@ -18,6 +18,7 @@
     "@codepulse/scoring": "workspace:*",
     "@codepulse/types": "workspace:*",
     "bullmq": "^5.12.7",
+    "ioredis": "^5.10.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

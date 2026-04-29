@@ -25,6 +25,20 @@ export const ScoreSchema = z.object({
 });
 export type Score = z.infer<typeof ScoreSchema>;
 
+/**
+ * Output type from the scoring engine — what gets stored in the Score table.
+ * No `level` field — level display is derived in the UI from codepulseScore ranges.
+ */
+export const CodePulseScoreSchema = z.object({
+  total: z.number().min(0).max(100),
+  components: ScoreComponentsSchema,
+  verificationMult: z.number().min(0).max(1),
+  recencyDecay: z.number().min(0).max(1),
+  scoringVersion: z.string(),
+  computedAt: z.date(),
+});
+export type CodePulseScore = z.infer<typeof CodePulseScoreSchema>;
+
 export const RankScopeSchema = z.enum(['CAMPUS', 'YEAR', 'BRANCH', 'SECTION']);
 export type RankScope = z.infer<typeof RankScopeSchema>;
 

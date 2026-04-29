@@ -4,32 +4,105 @@
 import { RawProfile } from '@codepulse/adapters';
 import { NormalizedMetricsOutput, TopicMastery } from '@codepulse/types';
 import { ProfileNormalizer, NORMALIZER_VERSION } from './index';
+import { getCanonicalTag } from './tag-map';
 
 export class CodeforcesNormalizer implements ProfileNormalizer {
   normalize(raw: RawProfile): NormalizedMetricsOutput {
     const { info, ratingHistory, submissions } = raw.data;
+    
+    const nowSecs = Date.now() / 1000;
+    const ninetyDaysSecs = 90 * 24 * 60 * 60;
+    
+    const activeDays = new Set<string>();
+    const activeDays90Set = new Set<string>();
+    
+    submissions.forEach((s: any) => {
+      const date = new Date(s.creationTimeSeconds * 1000).toISOString().split('T')[0]!;
+      activeDays.add(date);
+      
+      if (nowSecs - s.creationTimeSeconds <= ninetyDaysSecs) {
+        activeDays90Set.add(date);
+      }
+    });
+
+    const activeDays90 = activeDays90Set.size;
+    const sortedDays = Array.from(activeDays).sort();
+    
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let currentStreakCounter = 0;
+    
+    for (let i = 0; i < sortedDays.length; i++) {
+      if (i === 0) {
+        currentStreakCounter = 1;
+      } else {
+        const diff = (new Date(sortedDays[i]!).getTime() - new Date(sortedDays[i-1]!).getTime()) / (1000 * 60 * 60 * 24);
+        if (Math.round(diff) === 1) {
+          currentStreakCounter++;
+        } else {
+          currentStreakCounter = 1;
+        }
+      }
+      longestStreak = Math.max(longestStreak, currentStreakCounter);
+    }
+
+    if (sortedDays.length > 0) {
+      const lastDayStr = sortedDays[sortedDays.length - 1]!;
+      const diff = (new Date().getTime() - new Date(lastDayStr).getTime()) / (1000 * 60 * 60 * 24);
+      if (diff <= 2) {
+        currentStreak = currentStreakCounter;
+      }
+    }
+
+    let lastActiveAt = sortedDays.length > 0 ? new Date(sortedDays[sortedDays.length - 1]!) : new Date();
+
     const solvedSubmissions = submissions.filter((s: any) => s.verdict === 'OK');
-    const topics: TopicMastery = {};
+    const uniqueProblems = new Map<string, any>();
+    
     solvedSubmissions.forEach((s: any) => {
-      s.problem.tags.forEach((tag: string) => {
-        const normalizedTag = tag.toLowerCase().replace(/ /g, '-');
-        topics[normalizedTag] = (topics[normalizedTag] || 0) + 1;
-      });
+      const id = `${s.problem.contestId}-${s.problem.index}`;
+      if (!uniqueProblems.has(id)) {
+        uniqueProblems.set(id, s.problem);
+      }
+    });
+
+    let solvedEasy = 0;
+    let solvedMedium = 0;
+    let solvedHard = 0;
+    const topics: TopicMastery = {};
+
+    Array.from(uniqueProblems.values()).forEach(p => {
+      if (!p.rating) {
+        solvedEasy++;
+      } else if (p.rating < 1400) {
+        solvedEasy++;
+      } else if (p.rating <= 1900) {
+        solvedMedium++;
+      } else {
+        solvedHard++;
+      }
+      
+      if (p.tags) {
+        p.tags.forEach((tag: string) => {
+          const canonical = getCanonicalTag('CODEFORCES', tag);
+          topics[canonical] = Math.min((topics[canonical] || 0) + 0.05, 1.0);
+        });
+      }
     });
 
     return {
       platform: 'CODEFORCES',
-      solvedEasy: solvedSubmissions.length, // Simplified
-      solvedMedium: 0,
-      solvedHard: 0,
+      solvedEasy,
+      solvedMedium,
+      solvedHard,
       contestRating: info.rating || 0,
       peakRating: info.maxRating || 0,
       contestsAttended: ratingHistory.length,
       topicMastery: topics,
-      activeDays90: 0,
-      currentStreak: 0,
-      longestStreak: 0,
-      lastActiveAt: new Date(),
+      activeDays90,
+      currentStreak,
+      longestStreak,
+      lastActiveAt,
       badges: [],
       platformPercentile: null,
       normalizerVersion: NORMALIZER_VERSION

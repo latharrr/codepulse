@@ -15,6 +15,8 @@ import { Worker, Queue } from 'bullmq';
 import { createLogger, loadEnv } from '@codepulse/config';
 import { QUEUE_NAMES } from '@codepulse/types';
 
+import Redis from 'ioredis';
+
 // Validate environment at startup — fail fast
 const env = loadEnv();
 
@@ -25,9 +27,9 @@ import { recomputeScoreProcessor } from './processors/scoring';
 
 const logger = createLogger('worker:main');
 
-const redisConnection = {
-  url: env.REDIS_URL,
-};
+const redisConnection = new Redis(env.REDIS_URL, {
+  maxRetriesPerRequest: null,
+});
 
 logger.info({ queues: Object.values(QUEUE_NAMES) }, 'Starting CodePulse workers...');
 

@@ -32,7 +32,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!credentials?.email) return null;
         let user = await prisma.user.findUnique({ where: { email: credentials.email as string } });
         if (!user) {
-          user = await prisma.user.create({ data: { email: credentials.email as string, name: "Dev User", institutionId: "35e7950a-d5f7-4b68-b455-6112cdac3ee8" } });
+          user = await prisma.user.create({ data: { email: credentials.email as string, fullName: "Dev User", institutionId: "35e7950a-d5f7-4b68-b455-6112cdac3ee8" } });
         }
         return user;
       }

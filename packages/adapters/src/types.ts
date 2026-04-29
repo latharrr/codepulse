@@ -4,16 +4,15 @@
  * Principle: graceful degradation. A broken adapter must never crash the system
  * or block other adapters. All errors are caught at the worker level.
  */
-import type { NormalizedMetricsOutput } from '@codepulse/types';
 
 /** Raw API response — platform-specific, stored to SnapshotStore before parsing */
-export type RawProfile = Record<string, unknown>;
+export type RawProfile = Record<string, any>;
 
 /** Health check result for the /api/admin/health endpoint */
 export interface AdapterHealthCheck {
   ok: boolean;
   latencyMs: number;
-  error?: string;
+  error?: string | undefined;
 }
 
 /**
@@ -21,6 +20,7 @@ export interface AdapterHealthCheck {
  * All methods must be safe to call concurrently and must not share mutable state.
  */
 export interface PlatformAdapter {
+  /** Platform identifier — matches the Platform enum in @codepulse/types */
   readonly name: 'github' | 'codeforces' | 'leetcode';
   /** Semver string — bumped when scraping logic changes, triggers snapshot replay */
   readonly version: string;
@@ -32,14 +32,12 @@ export interface PlatformAdapter {
   fetchProfile(handle: string): Promise<RawProfile>;
 
   /**
-   * Parse raw profile into canonical NormalizedMetrics.
-   * @throws {AdapterError} if the raw payload cannot be parsed
-   */
-  parseProfile(raw: RawProfile): Promise<NormalizedMetricsOutput>;
-
-  /**
-   * Check if the platform bio contains the verification token.
+   * Check if the platform bio / profile field contains the verification token.
    * Returns false (not throw) if the bio cannot be fetched.
+   * Platform-specific field used:
+   *   - GitHub:      user.bio
+   *   - Codeforces:  user.info[0].firstName  (student sets temporarily)
+   *   - LeetCode:    matchedUser.profile.aboutMe
    */
   verifyBioToken(handle: string, token: string): Promise<boolean>;
 

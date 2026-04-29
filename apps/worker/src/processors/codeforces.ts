@@ -5,21 +5,25 @@ import { Job } from 'bullmq';
 import { prisma } from '@codepulse/db';
 import { createLogger } from '@codepulse/config';
 import { FetchProfileJob } from '@codepulse/types';
-import { CodeforcesAdapter } from '@codepulse/adapters';
+import { CodeforcesAdapter, snapshotStore } from '@codepulse/adapters';
 import { CodeforcesNormalizer } from '@codepulse/normalizer';
 import { queues } from '../index';
 
-const logger = createLogger({ module: 'worker:processor:codeforces' });
+const logger = createLogger('worker:processor:codeforces');
 
 export async function fetchCodeforcesProcessor(job: Job<FetchProfileJob>) {
   const { handle, handleId, userId } = job.data;
+  const startTime = Date.now();
   
   const adapter = new CodeforcesAdapter();
   const normalizer = new CodeforcesNormalizer();
 
   try {
     const rawProfile = await adapter.fetchProfile(handle);
+    const { storageKey, payloadHash } = await snapshotStore.put(`codeforces_${handle}`, rawProfile);
+    
     const metrics = normalizer.normalize(rawProfile);
+    const durationMs = Date.now() - startTime;
     
     await prisma.$transaction([
       prisma.normalizedMetric.upsert({
@@ -63,6 +67,16 @@ export async function fetchCodeforcesProcessor(job: Job<FetchProfileJob>) {
       prisma.platformHandle.update({
         where: { id: handleId },
         data: { lastFetchedAt: new Date(), lastSuccessAt: new Date(), consecutiveFailures: 0 }
+      }),
+      prisma.snapshot.create({
+        data: {
+          handleId,
+          storageKey,
+          payloadHash,
+          fetchStatus: 'OK',
+          scraperVersion: adapter.version,
+          durationMs,
+        }
       })
     ]);
 
@@ -70,6 +84,21 @@ export async function fetchCodeforcesProcessor(job: Job<FetchProfileJob>) {
 
     return metrics;
   } catch (error: any) {
+    const durationMs = Date.now() - startTime;
+    const { storageKey, payloadHash } = await snapshotStore.put(`codeforces_${handle}_error`, { error: error.message || 'Unknown error' });
+    
+    await prisma.snapshot.create({
+      data: {
+        handleId,
+        storageKey,
+        payloadHash,
+        fetchStatus: 'FAILED',
+        errorCode: error.code || 'UNKNOWN',
+        scraperVersion: adapter.version,
+        durationMs,
+      }
+    });
+
     logger.error({ error: error.message, handle }, 'Codeforces fetch failed');
     throw error;
   }

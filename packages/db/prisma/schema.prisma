@@ -42,8 +42,8 @@ model User {
   institution   Institution @relation(fields: [institutionId], references: [id])
 
   email     String @unique
-  regno     String
-  fullName  String
+  regno     String?
+  fullName  String?
   branch    String?
   section   String?
   batchYear Int?   // e.g. 2024 (graduating year or enrollment year)

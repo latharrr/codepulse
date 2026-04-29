@@ -21,6 +21,7 @@ export type OnboardingActionResult =
  * Called from the onboarding form Server Action.
  */
 export async function completeOnboarding(
+  prevState: OnboardingActionResult,
   formData: FormData,
 ): Promise<OnboardingActionResult> {
   const session = await auth();

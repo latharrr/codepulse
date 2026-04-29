@@ -8,18 +8,96 @@ import { ProfileNormalizer, NORMALIZER_VERSION } from './index';
 export class GitHubNormalizer implements ProfileNormalizer {
   normalize(raw: RawProfile): NormalizedMetricsOutput {
     const data = raw.data;
-    const repos = data.repositories.nodes || [];
+    const repos = data.repositories?.nodes || [];
     
+    // 1. Compute Topic Mastery (Languages + Topics) & Repo Stats
     const topics: TopicMastery = {};
-    repos.forEach((repo: any) => {
-      if (repo.primaryLanguage) {
+    let totalStars = 0;
+    
+    for (const repo of repos) {
+      if (repo.stargazerCount) totalStars += repo.stargazerCount;
+      
+      // Weight languages
+      if (repo.languages?.edges) {
+        for (const edge of repo.languages.edges) {
+          const lang = edge.node.name.toLowerCase();
+          topics[lang] = Math.min((topics[lang] || 0) + 0.1, 1.0);
+        }
+      } else if (repo.primaryLanguage) {
         const lang = repo.primaryLanguage.name.toLowerCase();
-        topics[lang] = (topics[lang] || 0) + 0.1; // Placeholder weighting
+        topics[lang] = Math.min((topics[lang] || 0) + 0.2, 1.0);
       }
-    });
+      
+      // Weight explicit repository topics
+      if (repo.repositoryTopics?.nodes) {
+        for (const topicNode of repo.repositoryTopics.nodes) {
+          const topicName = topicNode.topic?.name?.toLowerCase();
+          if (topicName) {
+            topics[topicName] = Math.min((topics[topicName] || 0) + 0.1, 1.0);
+          }
+        }
+      }
+    }
 
     const totalContributions = data.contributionsCollection?.contributionCalendar?.totalContributions || 0;
     
+    // Hidden stats stored in topicMastery so the scoring engine can use them
+    topics['_totalRepos'] = data.repositories?.totalCount || 0;
+    topics['_totalStars'] = totalStars;
+    topics['_totalContributions'] = totalContributions;
+
+    // 2. Compute Streaks & Activity
+    const weeks = data.contributionsCollection?.contributionCalendar?.weeks || [];
+    let allDays: { date: string; count: number }[] = [];
+    
+    for (const week of weeks) {
+      for (const day of week.contributionDays || []) {
+        allDays.push({ date: day.date, count: day.contributionCount });
+      }
+    }
+    
+    // Sort chronologically ascending
+    allDays.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    let activeDays90 = 0;
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let currentStreakCounter = 0;
+    
+    const now = new Date();
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    
+    for (const day of allDays) {
+      const dayDate = new Date(day.date);
+      
+      // Streaks
+      if (day.count > 0) {
+        currentStreakCounter++;
+        longestStreak = Math.max(longestStreak, currentStreakCounter);
+      } else {
+        currentStreakCounter = 0;
+      }
+      
+      // Active Days 90
+      if (dayDate >= ninetyDaysAgo && day.count > 0) {
+        activeDays90++;
+      }
+    }
+    
+    // For current streak, if the last day or today is active, we consider currentStreak = currentStreakCounter
+    // Assuming the last day in the array is today or yesterday
+    currentStreak = currentStreakCounter;
+
+    // Last active at
+    let lastActiveAt: Date | null = null;
+    for (let i = allDays.length - 1; i >= 0; i--) {
+      const day = allDays[i];
+      if (day && day.count > 0) {
+        lastActiveAt = new Date(day.date);
+        break;
+      }
+    }
+
     return {
       platform: 'GITHUB',
       solvedEasy: 0,
@@ -29,10 +107,10 @@ export class GitHubNormalizer implements ProfileNormalizer {
       peakRating: null,
       contestsAttended: 0,
       topicMastery: topics,
-      activeDays90: 0,
-      currentStreak: 0,
-      longestStreak: 0,
-      lastActiveAt: new Date(),
+      activeDays90,
+      currentStreak,
+      longestStreak,
+      lastActiveAt: lastActiveAt ?? new Date(),
       badges: [],
       platformPercentile: null,
       normalizerVersion: NORMALIZER_VERSION

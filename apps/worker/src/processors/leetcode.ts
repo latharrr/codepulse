@@ -5,21 +5,25 @@ import { Job } from 'bullmq';
 import { prisma } from '@codepulse/db';
 import { createLogger } from '@codepulse/config';
 import { FetchProfileJob } from '@codepulse/types';
-import { LeetCodeAdapter } from '@codepulse/adapters';
+import { LeetCodeAdapter, snapshotStore } from '@codepulse/adapters';
 import { LeetCodeNormalizer } from '@codepulse/normalizer';
 import { queues } from '../index';
 
-const logger = createLogger({ module: 'worker:processor:leetcode' });
+const logger = createLogger('worker:processor:leetcode');
 
 export async function fetchLeetcodeProcessor(job: Job<FetchProfileJob>) {
   const { handle, handleId, userId } = job.data;
+  const startTime = Date.now();
   
   const adapter = new LeetCodeAdapter();
   const normalizer = new LeetCodeNormalizer();
 
   try {
     const rawProfile = await adapter.fetchProfile(handle);
+    const { storageKey, payloadHash } = await snapshotStore.put(`leetcode_${handle}`, rawProfile);
+    
     const metrics = normalizer.normalize(rawProfile);
+    const durationMs = Date.now() - startTime;
     
     await prisma.$transaction([
       prisma.normalizedMetric.upsert({
@@ -63,6 +67,16 @@ export async function fetchLeetcodeProcessor(job: Job<FetchProfileJob>) {
       prisma.platformHandle.update({
         where: { id: handleId },
         data: { lastFetchedAt: new Date(), lastSuccessAt: new Date(), consecutiveFailures: 0 }
+      }),
+      prisma.snapshot.create({
+        data: {
+          handleId,
+          storageKey,
+          payloadHash,
+          fetchStatus: 'OK',
+          scraperVersion: adapter.version,
+          durationMs,
+        }
       })
     ]);
 
@@ -70,6 +84,21 @@ export async function fetchLeetcodeProcessor(job: Job<FetchProfileJob>) {
 
     return metrics;
   } catch (error: any) {
+    const durationMs = Date.now() - startTime;
+    const { storageKey, payloadHash } = await snapshotStore.put(`leetcode_${handle}_error`, { error: error.message || 'Unknown error' });
+    
+    await prisma.snapshot.create({
+      data: {
+        handleId,
+        storageKey,
+        payloadHash,
+        fetchStatus: 'FAILED',
+        errorCode: error.code || 'UNKNOWN',
+        scraperVersion: adapter.version,
+        durationMs,
+      }
+    });
+
     logger.error({ error: error.message, handle }, 'LeetCode fetch failed');
     throw error;
   }

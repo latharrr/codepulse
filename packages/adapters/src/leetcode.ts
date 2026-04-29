@@ -2,21 +2,24 @@
  * LeetCode Platform Adapter
  *
  * Fetches user profile, contest rating, and submission stats
- * using the LeetCode GraphQL API.
+ * using the LeetCode GraphQL API (no auth required for public data).
+ *
+ * verifyBioToken: checks matchedUser.profile.aboutMe for the token.
  */
-import { 
-  PlatformAdapter, 
-  RawProfile, 
-  AdapterError, 
-  AdapterHealthCheck 
+import {
+  PlatformAdapter,
+  RawProfile,
+  AdapterError,
+  AdapterHealthCheck,
 } from './types';
-import { Platform } from '@codepulse/types';
 import { createLogger } from '@codepulse/config';
 
-const logger = createLogger({ module: 'adapter:leetcode' });
+const logger = createLogger('adapter:leetcode');
 
 export class LeetCodeAdapter implements PlatformAdapter {
-  readonly platform: Platform = 'LEETCODE';
+  readonly name = 'leetcode' as const;
+  readonly version = '1.0.0';
+
   private readonly baseUrl = 'https://leetcode.com/graphql';
 
   async fetchProfile(handle: string): Promise<RawProfile> {
@@ -77,55 +80,110 @@ export class LeetCodeAdapter implements PlatformAdapter {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'CodePulse-Intelligence-Platform'
+          'User-Agent': 'CodePulse-Intelligence-Platform',
         },
-        body: JSON.stringify({ query, variables: { username: handle } })
+        body: JSON.stringify({ query, variables: { username: handle } }),
       });
 
-      const result = await response.json();
-
-      if (result.errors) {
-        throw new AdapterError(this.platform, `LeetCode Error: ${result.errors[0].message}`);
+      if (!response.ok) {
+        throw new AdapterError(
+          `LeetCode API HTTP error: ${response.status}`,
+          'SERVER_ERROR',
+          response.status >= 500,
+          response.status,
+        );
       }
 
-      if (!result.data.matchedUser) {
-        throw new AdapterError(this.platform, `User ${handle} not found`, false);
+      const result = await response.json() as any;
+
+      if (result.errors) {
+        throw new AdapterError(
+          `LeetCode GraphQL error: ${result.errors[0].message}`,
+          'SERVER_ERROR',
+          true,
+        );
+      }
+
+      if (!result.data?.matchedUser) {
+        throw new AdapterError(
+          `User ${handle} not found on LeetCode`,
+          'NOT_FOUND',
+          false,
+          404,
+        );
       }
 
       return {
-        platform: this.platform,
+        platform: 'LEETCODE',
         handle,
         data: {
           profile: result.data.matchedUser,
-          contest: result.data.userContestRanking
+          contest: result.data.userContestRanking,
         },
-        fetchedAt: new Date()
+        fetchedAt: new Date(),
       };
-    } catch (error) {
+    } catch (error: any) {
       if (error instanceof AdapterError) throw error;
-      logger.error({ error, handle }, 'Failed to fetch LeetCode profile');
-      throw new AdapterError(this.platform, 'Network error or internal failure');
+      logger.error({ error: error.message, handle }, 'Failed to fetch LeetCode profile');
+      throw new AdapterError(
+        `Network error fetching LeetCode profile: ${error.message}`,
+        'NETWORK_ERROR',
+        true,
+      );
     }
   }
 
-  async checkHealth(): Promise<AdapterHealthCheck> {
+  /**
+   * Checks whether the user's LeetCode "About Me" section contains the token.
+   * Returns false (never throws) if the profile cannot be fetched.
+   */
+  async verifyBioToken(handle: string, token: string): Promise<boolean> {
+    const query = `
+      query($username: String!) {
+        matchedUser(username: $username) {
+          profile { aboutMe }
+        }
+      }
+    `;
+    try {
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'CodePulse-Intelligence-Platform',
+        },
+        body: JSON.stringify({ query, variables: { username: handle } }),
+      });
+      if (!response.ok) return false;
+      const result = await response.json() as any;
+      const aboutMe: string =
+        result?.data?.matchedUser?.profile?.aboutMe ?? '';
+      return aboutMe.includes(token);
+    } catch {
+      return false;
+    }
+  }
+
+  async healthCheck(): Promise<AdapterHealthCheck> {
+    const start = Date.now();
     try {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: '{ globalData { user { isSignedIn } } }' })
+        body: JSON.stringify({
+          query: '{ globalData { user { isSignedIn } } }',
+        }),
       });
       return {
-        platform: this.platform,
-        status: response.ok ? 'healthy' : 'degraded',
-        latencyMs: 0
+        ok: response.ok,
+        latencyMs: Date.now() - start,
+        error: response.ok ? undefined : `HTTP ${response.status}`,
       };
-    } catch (error) {
+    } catch (error: any) {
       return {
-        platform: this.platform,
-        status: 'unhealthy',
-        latencyMs: 0,
-        error: 'Connection failed'
+        ok: false,
+        latencyMs: Date.now() - start,
+        error: error.message,
       };
     }
   }

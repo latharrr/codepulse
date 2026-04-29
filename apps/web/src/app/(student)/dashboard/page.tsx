@@ -31,10 +31,10 @@ export default async function DashboardPage() {
   if (!user) redirect('/login');
 
   const score = user.score;
-  const activeHandles = user.handles.filter(h => h.status === 'ACTIVE');
+  const activeHandles = user.handles.filter((h: any) => h.status === 'ACTIVE');
   const metrics = user.metrics;
 
-  const totalSolved = metrics.reduce((acc, m) => acc + (m.solvedEasy || 0) + (m.solvedMedium || 0) + (m.solvedHard || 0), 0);
+  const totalSolved = metrics.reduce((acc: number, m: any) => acc + (m.solvedEasy || 0) + (m.solvedMedium || 0) + (m.solvedHard || 0), 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -79,7 +79,7 @@ export default async function DashboardPage() {
           {[
             { label: 'Total Solved', value: totalSolved || '—', sub: 'problems across platforms', icon: '🧩' },
             { label: 'Active Handles', value: activeHandles.length, sub: 'connected platforms', icon: '✅' },
-            { label: 'Best Rating', value: Math.max(...metrics.map(m => m?.contestRating || 0), 0) || '—', sub: 'max rating found', icon: '🏆' },
+            { label: 'Best Rating', value: Math.max(...metrics.map((m: any) => m?.contestRating || 0), 0) || '—', sub: 'max rating found', icon: '🏆' },
             { label: 'Platform Rank', value: '—', sub: 'campus standing', icon: '📊' },
           ].map((kpi) => (
             <div key={kpi.label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
@@ -98,7 +98,7 @@ export default async function DashboardPage() {
         <section>
           <h2 className="mb-4 text-lg font-semibold text-foreground">Connected Platforms</h2>
           <div className="grid gap-4 sm:grid-cols-3">
-            {user.handles.map((h) => (
+            {user.handles.map((h: any) => (
               <div key={h.id} className="rounded-xl border border-border bg-card p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-medium text-foreground">{h.platform}</span>

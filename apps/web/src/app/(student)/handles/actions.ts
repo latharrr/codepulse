@@ -14,9 +14,6 @@ export async function linkHandle(platform: Platform, handle: string) {
   const userId = session.user.id;
   const verificationToken = `cp_${crypto.randomBytes(8).toString('hex')}`;
 
-  console.log(`linkHandle called for ${platform} ${handle}`);
-  console.log(`REDIS_URL loaded: ${process.env.REDIS_URL ? 'YES (masked)' : 'NO'}`);
-
   // 1. Create handle in DB
   const platformHandle = await prisma.platformHandle.upsert({
     where: { platform_handle: { platform, handle } },
@@ -45,17 +42,12 @@ export async function linkHandle(platform: Platform, handle: string) {
     reason: 'initial' as const,
   };
 
-  console.log(`Enqueuing ${platform} fetch job for ${handle}...`);
-
   if (platform === 'GITHUB') {
     await queues.fetchGithub.add(`fetch-${handle}`, jobData);
-    console.log('Added to fetchGithub queue');
   } else if (platform === 'CODEFORCES') {
     await queues.fetchCodeforces.add(`fetch-${handle}`, jobData);
-    console.log('Added to fetchCodeforces queue');
   } else if (platform === 'LEETCODE') {
     await queues.fetchLeetcode.add(`fetch-${handle}`, jobData);
-    console.log('Added to fetchLeetcode queue');
   }
 
   revalidatePath('/dashboard');
