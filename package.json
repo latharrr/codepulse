@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "esbuild": "^0.28.0",
     "eslint": "^9.5.0",
     "husky": "^9.1.0",
     "lint-staged": "^15.2.7",
