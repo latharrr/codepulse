@@ -1,6 +1,6 @@
 # Base image
 FROM node:20-alpine3.18 AS base
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # 1. Install dependencies only when needed
 FROM base AS deps
