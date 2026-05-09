@@ -6,7 +6,7 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['bullmq', 'ioredis'],
     outputFileTracingIncludes: {
-      '/api/**/*': ['./node_modules/**/*.prisma', './node_modules/**/*.so.node'],
+      '/**': ['./node_modules/**/*.prisma', './node_modules/**/*.so.node'],
     },
   },
   images: {
