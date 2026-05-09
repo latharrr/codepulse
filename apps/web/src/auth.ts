@@ -13,41 +13,11 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import GitHub from 'next-auth/providers/github';
-import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@codepulse/db';
 import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET || 'fallback_secret_for_typecheck',
-  adapter: (function () {
-    const adapter = PrismaAdapter(prisma);
-    return {
-      ...adapter,
-      createUser: async (data: any) => {
-        // Find the default institution
-        const institution = await prisma.institution.findFirst({
-          where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
-        });
-        if (!institution) throw new Error('Default institution not found in database');
-
-        // Assign ADMIN role to specific email
-        const role = data.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
-
-        const user = await prisma.user.create({
-          data: {
-            ...data,
-            role,
-            institutionId: institution.id,
-          },
-        });
-
-        return {
-          ...user,
-          emailVerified: data.emailVerified,
-        } as any;
-      },
-    };
-  })(),
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
@@ -124,10 +94,34 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return session;
     },
     async signIn({ user, account }) {
-      // Only allow Google sign-in for primary auth
       // GitHub sign-in is handled via separate OAuth flow for handle linking
       if (account?.provider === 'github' && !user.email) {
         return false;
+      }
+
+      // Auto-provision user on Google sign-in
+      if (account?.provider === 'google' && user.email) {
+        const existing = await prisma.user.findUnique({
+          where: { email: user.email },
+        });
+        if (!existing) {
+          const institution = await prisma.institution.findFirst({
+            where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
+          });
+          if (!institution) {
+            console.error('[auth] default institution not found');
+            return false;
+          }
+          const role = user.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
+          await prisma.user.create({
+            data: {
+              email: user.email,
+              fullName: user.name ?? null,
+              role,
+              institutionId: institution.id,
+            },
+          });
+        }
       }
       return true;
     },
