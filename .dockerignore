@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+.git
+.turbo
+snapshots
+scratch
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+.env
+.env*.local
