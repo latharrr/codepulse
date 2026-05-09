@@ -61,6 +61,11 @@ services:
       - REDIS_URL=redis://:${REDIS_PASSWORD:-codepulse_redis_password}@redis:6379
       - GITHUB_PAT_POOL=${GITHUB_PAT_POOL}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
+      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
+      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID}
+      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET}
       - NODE_ENV=production
       - SNAPSHOT_STORE_TYPE=local
       - SNAPSHOT_STORE_PATH=/app/snapshots
