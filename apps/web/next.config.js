@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ['@codepulse/config', '@codepulse/db', '@codepulse/types'],
   experimental: {
