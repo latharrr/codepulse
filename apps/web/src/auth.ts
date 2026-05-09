@@ -31,13 +31,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Assign ADMIN role to specific email
       const role = data.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
 
-      return prisma.user.create({
+      const user = await prisma.user.create({
         data: {
           ...data,
           role,
           institutionId: institution.id,
         },
       });
+
+      return {
+        ...user,
+        emailVerified: data.emailVerified,
+      } as any; // Cast to any to bypass strict NextAuth adapter type checks
     },
   },
   providers: [
