@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-codepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-codepulse_prod_password}
+      POSTGRES_DB: ${POSTGRES_DB:-codepulse_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U codepulse -d codepulse_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-codepulse_redis_password}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-codepulse_redis_password}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: always
+    ports:
+      - "80:3000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-codepulse}:${POSTGRES_PASSWORD:-codepulse_prod_password}@postgres:5432/${POSTGRES_DB:-codepulse_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-codepulse_redis_password}@redis:6379
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
+      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
+      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID}
+      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET}
+      - GITHUB_PAT_POOL=${GITHUB_PAT_POOL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-codepulse}:${POSTGRES_PASSWORD:-codepulse_prod_password}@postgres:5432/${POSTGRES_DB:-codepulse_db}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-codepulse_redis_password}@redis:6379
+      - GITHUB_PAT_POOL=${GITHUB_PAT_POOL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - NODE_ENV=production
+      - SNAPSHOT_STORE_TYPE=local
+      - SNAPSHOT_STORE_PATH=/app/snapshots
+    volumes:
+      - snapshots:/app/snapshots
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  snapshots:

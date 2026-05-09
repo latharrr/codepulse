@@ -18,7 +18,7 @@ import { prisma } from '@codepulse/db';
 import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: process.env.AUTH_SECRET || "MjXJVicp6QGerhVWePE3UzUnSXn09MtQE7Jw7tLi0II=",
+  secret: process.env.AUTH_SECRET || 'fallback_secret_for_typecheck',
   adapter: PrismaAdapter(prisma),
   providers: [
     Google({
@@ -32,7 +32,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!credentials?.email) return null;
         let user = await prisma.user.findUnique({ where: { email: credentials.email as string } });
         if (!user) {
-          user = await prisma.user.create({ data: { email: credentials.email as string, fullName: "Dev User", institutionId: "35e7950a-d5f7-4b68-b455-6112cdac3ee8" } });
+          const institution = await prisma.institution.findUnique({ where: { slug: 'lpu' } });
+          if (!institution) throw new Error('Default institution LPU not found in database');
+          user = await prisma.user.create({ data: { email: credentials.email as string, fullName: "Dev User", institutionId: institution.id } });
         }
         return user;
       }
@@ -51,9 +53,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) {
+      if (user && user.id) {
         // Persist user id and role in the JWT
-        token.userId = user.id;
+        token.userId = user.id as string;
       }
       if (token.userId) {
         const dbUser = await prisma.user.findUnique({

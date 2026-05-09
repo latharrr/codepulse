@@ -11,11 +11,9 @@
  * Each worker is independent — a crash in one does NOT affect others.
  * All workers share a single Redis connection pool.
  */
-import { Worker, Queue } from 'bullmq';
+import { Worker } from 'bullmq';
 import { createLogger, loadEnv } from '@codepulse/config';
 import { QUEUE_NAMES } from '@codepulse/types';
-
-import Redis from 'ioredis';
 
 // Validate environment at startup — fail fast
 const env = loadEnv();
@@ -24,23 +22,19 @@ import { fetchGithubProcessor } from './processors/github';
 import { fetchCodeforcesProcessor } from './processors/codeforces';
 import { fetchLeetcodeProcessor } from './processors/leetcode';
 import { recomputeScoreProcessor } from './processors/scoring';
+import { recomputeRanksProcessor } from './processors/recomputeRanks';
+import { verifyHandleProcessor } from './processors/verifyHandle';
+import { nightlyRefreshProcessor } from './processors/nightlyRefresh';
+import { closeQueues, getQueues, getRedisConnection } from './queues';
 
 const logger = createLogger('worker:main');
 
-const redisConnection = new Redis(env.REDIS_URL, {
-  maxRetriesPerRequest: null,
-});
+const redisConnection = getRedisConnection();
 
 logger.info({ queues: Object.values(QUEUE_NAMES) }, 'Starting CodePulse workers...');
 
 // ── Queue definitions (for enqueuing from other services) ─────
-export const queues = {
-  verifyHandle: new Queue(QUEUE_NAMES.VERIFY_HANDLE, { connection: redisConnection }),
-  fetchGithub: new Queue(QUEUE_NAMES.FETCH_GITHUB, { connection: redisConnection }),
-  fetchCodeforces: new Queue(QUEUE_NAMES.FETCH_CODEFORCES, { connection: redisConnection }),
-  fetchLeetcode: new Queue(QUEUE_NAMES.FETCH_LEETCODE, { connection: redisConnection }),
-  recomputeScore: new Queue(QUEUE_NAMES.RECOMPUTE_SCORE, { connection: redisConnection }),
-};
+const queues = getQueues();
 
 // ── Workers ────────────────────────────────────────────────────
 
@@ -48,30 +42,18 @@ export const queues = {
  * Verify Handle Worker (Step 3)
  * Checks platform bio for verification token.
  */
-const verifyHandleWorker = new Worker(
-  QUEUE_NAMES.VERIFY_HANDLE,
-  async (job) => {
-    logger.info({ jobId: job.id, data: job.data }, 'Processing verify-handle job');
-    // Placeholder for actual bio-token check in Step 3
-    return { success: true }; 
-  },
-  {
-    connection: redisConnection,
-    concurrency: 5,
-  },
-);
+const verifyHandleWorker = new Worker(QUEUE_NAMES.VERIFY_HANDLE, verifyHandleProcessor, {
+  connection: redisConnection,
+  concurrency: 5,
+});
 
 /**
  * Fetch GitHub Worker
  */
-const fetchGithubWorker = new Worker(
-  QUEUE_NAMES.FETCH_GITHUB,
-  fetchGithubProcessor,
-  {
-    connection: redisConnection,
-    concurrency: env.WORKER_CONCURRENCY_GITHUB,
-  },
-);
+const fetchGithubWorker = new Worker(QUEUE_NAMES.FETCH_GITHUB, fetchGithubProcessor, {
+  connection: redisConnection,
+  concurrency: env.WORKER_CONCURRENCY_GITHUB,
+});
 
 /**
  * Fetch Codeforces Worker
@@ -109,6 +91,30 @@ const recomputeScoreWorker = new Worker(
   },
 );
 
+/**
+ * Recompute Ranks Worker
+ */
+const recomputeRanksWorker = new Worker(
+  QUEUE_NAMES.RECOMPUTE_RANKS,
+  recomputeRanksProcessor,
+  {
+    connection: redisConnection,
+    concurrency: 1, // Global operation, must be single-threaded
+  },
+);
+
+/**
+ * Nightly Refresh Worker
+ */
+const nightlyRefreshWorker = new Worker(
+  QUEUE_NAMES.NIGHTLY_REFRESH,
+  nightlyRefreshProcessor,
+  {
+    connection: redisConnection,
+    concurrency: 1,
+  },
+);
+
 // ── Error handlers (graceful degradation) ─────────────────────
 
 const allWorkers = [
@@ -117,6 +123,8 @@ const allWorkers = [
   fetchCodeforcesWorker,
   fetchLeetcodeWorker,
   recomputeScoreWorker,
+  recomputeRanksWorker,
+  nightlyRefreshWorker,
 ];
 
 for (const worker of allWorkers) {
@@ -137,11 +145,31 @@ for (const worker of allWorkers) {
   });
 }
 
+// ── Setup Repeatable Jobs ──────────────────────────────────────
+
+async function setupRepeatableJobs() {
+  await queues.nightlyRefresh.add(
+    'nightly-trigger',
+    {},
+    {
+      repeat: {
+        pattern: '0 0 * * *', // Every midnight
+      },
+    },
+  );
+  logger.info('Scheduled nightly refresh repeatable job');
+}
+
+setupRepeatableJobs().catch((err) => {
+  logger.error({ error: err.message }, 'Failed to setup repeatable jobs');
+});
+
 // ── Graceful shutdown ──────────────────────────────────────────
 
 async function shutdown() {
   logger.info('Shutting down workers...');
   await Promise.all(allWorkers.map((w) => w.close()));
+  await closeQueues();
   logger.info('All workers stopped. Goodbye.');
   process.exit(0);
 }

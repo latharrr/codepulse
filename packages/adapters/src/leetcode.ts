@@ -94,11 +94,17 @@ export class LeetCodeAdapter implements PlatformAdapter {
         );
       }
 
-      const result = await response.json() as any;
+      const result = await response.json() as { 
+        data?: { 
+          matchedUser?: Record<string, unknown>;
+          userContestRanking?: Record<string, unknown>;
+        }; 
+        errors?: Array<{ message: string }>;
+      };
 
       if (result.errors) {
         throw new AdapterError(
-          `LeetCode GraphQL error: ${result.errors[0].message}`,
+          `LeetCode GraphQL error: ${result.errors[0]?.message ?? 'Unknown'}`,
           'SERVER_ERROR',
           true,
         );
@@ -122,11 +128,12 @@ export class LeetCodeAdapter implements PlatformAdapter {
         },
         fetchedAt: new Date(),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof AdapterError) throw error;
-      logger.error({ error: error.message, handle }, 'Failed to fetch LeetCode profile');
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error({ error: msg, handle }, 'Failed to fetch LeetCode profile');
       throw new AdapterError(
-        `Network error fetching LeetCode profile: ${error.message}`,
+        `Network error fetching LeetCode profile: ${msg}`,
         'NETWORK_ERROR',
         true,
       );
@@ -155,9 +162,8 @@ export class LeetCodeAdapter implements PlatformAdapter {
         body: JSON.stringify({ query, variables: { username: handle } }),
       });
       if (!response.ok) return false;
-      const result = await response.json() as any;
-      const aboutMe: string =
-        result?.data?.matchedUser?.profile?.aboutMe ?? '';
+      const result = await response.json() as { data?: { matchedUser?: { profile?: { aboutMe?: string } } } };
+      const aboutMe = result?.data?.matchedUser?.profile?.aboutMe ?? '';
       return aboutMe.includes(token);
     } catch {
       return false;
@@ -179,11 +185,12 @@ export class LeetCodeAdapter implements PlatformAdapter {
         latencyMs: Date.now() - start,
         error: response.ok ? undefined : `HTTP ${response.status}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
         latencyMs: Date.now() - start,
-        error: error.message,
+        error: msg,
       };
     }
   }

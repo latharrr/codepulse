@@ -3,8 +3,8 @@ import { promises as fs } from 'fs';
 import path from 'path';
 
 export interface SnapshotStore {
-  put(key: string, payload: Record<string, any>): Promise<{ storageKey: string; payloadHash: string }>;
-  get(key: string): Promise<Record<string, any> | null>;
+  put(key: string, payload: Record<string, unknown>): Promise<{ storageKey: string; payloadHash: string }>;
+  get(key: string): Promise<Record<string, unknown> | null>;
 }
 
 export class LocalSnapshotStore implements SnapshotStore {
@@ -23,7 +23,7 @@ export class LocalSnapshotStore implements SnapshotStore {
     }
   }
 
-  async put(key: string, payload: Record<string, any>): Promise<{ storageKey: string; payloadHash: string }> {
+  async put(key: string, payload: Record<string, unknown>): Promise<{ storageKey: string; payloadHash: string }> {
     const payloadStr = JSON.stringify(payload);
     const payloadHash = createHash('sha256').update(payloadStr).digest('hex');
     
@@ -39,12 +39,12 @@ export class LocalSnapshotStore implements SnapshotStore {
     return { storageKey, payloadHash };
   }
 
-  async get(storageKey: string): Promise<Record<string, any> | null> {
+  async get(storageKey: string): Promise<Record<string, unknown> | null> {
     try {
       const fullPath = path.join(this.storePath, storageKey);
       const data = await fs.readFile(fullPath, 'utf-8');
       return JSON.parse(data);
-    } catch (e) {
+    } catch {
       return null;
     }
   }

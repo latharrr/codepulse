@@ -6,7 +6,7 @@
  */
 
 /** Raw API response — platform-specific, stored to SnapshotStore before parsing */
-export type RawProfile = Record<string, any>;
+export type RawProfile = Record<string, unknown>;
 
 /** Health check result for the /api/admin/health endpoint */
 export interface AdapterHealthCheck {

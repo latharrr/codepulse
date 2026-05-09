@@ -15,6 +15,8 @@ export const QUEUE_NAMES = {
   FETCH_CODEFORCES: 'fetch-codeforces',
   FETCH_LEETCODE: 'fetch-leetcode',
   RECOMPUTE_SCORE: 'recompute-score',
+  RECOMPUTE_RANKS: 'recompute-ranks',
+  NIGHTLY_REFRESH: 'nightly-refresh',
 } as const;
 
 export type QueueName = typeof QUEUE_NAMES[keyof typeof QUEUE_NAMES];
@@ -48,10 +50,17 @@ export const RecomputeScoreJobSchema = z.object({
 });
 export type RecomputeScoreJob = z.infer<typeof RecomputeScoreJobSchema>;
 
+export const RecomputeRanksJobSchema = z.object({
+  /** If present, limits the recompute to a specific scope value, else recomputes all */
+  scopeValue: z.string().optional(),
+});
+export type RecomputeRanksJob = z.infer<typeof RecomputeRanksJobSchema>;
+
 /** Union of all job payloads */
 export type JobPayload =
   | { queue: typeof QUEUE_NAMES.VERIFY_HANDLE; data: VerifyHandleJob }
   | { queue: typeof QUEUE_NAMES.FETCH_GITHUB; data: FetchProfileJob }
   | { queue: typeof QUEUE_NAMES.FETCH_CODEFORCES; data: FetchProfileJob }
   | { queue: typeof QUEUE_NAMES.FETCH_LEETCODE; data: FetchProfileJob }
-  | { queue: typeof QUEUE_NAMES.RECOMPUTE_SCORE; data: RecomputeScoreJob };
+  | { queue: typeof QUEUE_NAMES.RECOMPUTE_SCORE; data: RecomputeScoreJob }
+  | { queue: typeof QUEUE_NAMES.RECOMPUTE_RANKS; data: RecomputeRanksJob };

@@ -1,19 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: [
-    '@codepulse/config',
-    '@codepulse/db',
-    '@codepulse/types',
-  ],
+  transpilePackages: ['@codepulse/config', '@codepulse/db', '@codepulse/types'],
   experimental: {
-    // Server Actions are stable in Next 14
+    serverComponentsExternalPackages: ['bullmq', 'ioredis'],
   },
   images: {
-    domains: [
-      'avatars.githubusercontent.com',
-      'lh3.googleusercontent.com',
-    ],
+    domains: ['avatars.githubusercontent.com', 'lh3.googleusercontent.com'],
   },
 };
 

@@ -8,6 +8,8 @@
  * Principle: fail fast if environment is misconfigured. Never access process.env directly.
  */
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 
 const envSchema = z.object({
   // ── Node ─────────────────────────────────────────────────────
@@ -96,8 +98,6 @@ export function loadEnv(): Env {
 
   // Simple manual .env loader for the worker process since it doesn't auto-load it
   try {
-    const fs = require('fs');
-    const path = require('path');
     const envPath = path.resolve(__dirname, '../../../.env');
     if (fs.existsSync(envPath)) {
       const envFile = fs.readFileSync(envPath, 'utf8');
@@ -116,7 +116,7 @@ export function loadEnv(): Env {
         }
       });
     }
-  } catch (e) {
+  } catch {
     // Ignore if not found or errors reading
   }
 
@@ -124,7 +124,7 @@ export function loadEnv(): Env {
 
   if (!result.success) {
     const formatted = result.error.errors
-      .map((e) => `  • ${e.path.join('.')}: ${e.message}`)
+      .map((err) => `  • ${err.path.join('.')}: ${err.message}`)
       .join('\n');
     throw new Error(
       `❌ CodePulse environment validation failed:\n${formatted}\n\nCheck your .env file against .env.example`,

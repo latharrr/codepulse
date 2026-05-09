@@ -24,23 +24,7 @@ export class GitHubAdapter implements PlatformAdapter {
   private tokens: string[];
   private currentTokenIndex = 0;
 
-  constructor(tokens: string[]) {
-    if (tokens.length === 0) {
-      throw new Error('GitHubAdapter requires at least one PAT token');
-    }
-    this.tokens = tokens;
-  }
-
-  private get nextToken(): string {
-    const token = this.tokens[this.currentTokenIndex] as string;
-    this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
-    return token;
-  }
-
-  async fetchProfile(handle: string): Promise<RawProfile> {
-    logger.debug({ handle }, 'Fetching GitHub profile');
-
-    const query = `
+  private readonly queryProfile = `
       query($login: String!) {
         user(login: $login) {
           login
@@ -92,6 +76,24 @@ export class GitHubAdapter implements PlatformAdapter {
       }
     `;
 
+  constructor(tokens: string[]) {
+    if (tokens.length === 0) {
+      throw new Error('GitHubAdapter requires at least one PAT token');
+    }
+    this.tokens = tokens;
+  }
+
+  private get nextToken(): string {
+    const token = this.tokens[this.currentTokenIndex] as string;
+    this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
+    return token;
+  }
+
+  async fetchProfile(handle: string): Promise<RawProfile> {
+    logger.debug({ handle }, 'Fetching GitHub profile');
+
+
+
     try {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
@@ -100,7 +102,7 @@ export class GitHubAdapter implements PlatformAdapter {
           'Content-Type': 'application/json',
           'User-Agent': 'CodePulse-Intelligence-Platform',
         },
-        body: JSON.stringify({ query, variables: { login: handle } }),
+        body: JSON.stringify({ query: this.queryProfile, variables: { login: handle } }),
       });
 
       if (!response.ok) {
@@ -121,12 +123,10 @@ export class GitHubAdapter implements PlatformAdapter {
         );
       }
 
-      const result = await response.json() as any;
+      const result = await response.json() as { data?: { user?: Record<string, unknown> }; errors?: Array<{ message: string; type?: string }> };
 
       if (result.errors) {
-        const isNotFound = result.errors.some(
-          (e: any) => e.type === 'NOT_FOUND',
-        );
+        const isNotFound = result.errors.some((e) => e.type === 'NOT_FOUND');
         if (isNotFound) {
           throw new AdapterError(
             `User ${handle} not found`,
@@ -136,10 +136,14 @@ export class GitHubAdapter implements PlatformAdapter {
           );
         }
         throw new AdapterError(
-          `GraphQL Error: ${result.errors[0].message}`,
+          `GraphQL Error: ${result.errors[0]?.message ?? 'Unknown'}`,
           'SERVER_ERROR',
           true,
         );
+      }
+
+      if (!result.data?.user) {
+        throw new AdapterError(`User data missing for ${handle}`, 'NOT_FOUND', false, 404);
       }
 
       return {
@@ -148,14 +152,15 @@ export class GitHubAdapter implements PlatformAdapter {
         data: result.data.user,
         fetchedAt: new Date(),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof AdapterError) throw error;
+      const err = error as Error;
       logger.error(
-        { error: error.message, stack: error.stack, handle },
+        { error: err.message, stack: err.stack, handle },
         'Failed to fetch GitHub profile',
       );
       throw new AdapterError(
-        `Network error or internal failure: ${error.message}`,
+        `Network error or internal failure: ${err.message}`,
         'NETWORK_ERROR',
         true,
       );
@@ -183,8 +188,8 @@ export class GitHubAdapter implements PlatformAdapter {
         body: JSON.stringify({ query, variables: { login: handle } }),
       });
       if (!response.ok) return false;
-      const result = await response.json() as any;
-      const bio: string = result?.data?.user?.bio ?? '';
+      const result = await response.json() as { data?: { user?: { bio?: string } } };
+      const bio = result?.data?.user?.bio ?? '';
       return bio.includes(token);
     } catch {
       return false;
@@ -205,11 +210,12 @@ export class GitHubAdapter implements PlatformAdapter {
         latencyMs: Date.now() - start,
         error: response.ok ? undefined : `HTTP ${response.status}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       return {
         ok: false,
         latencyMs: Date.now() - start,
-        error: error.message,
+        error: err.message,
       };
     }
   }

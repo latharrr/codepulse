@@ -31,10 +31,11 @@ export class CodeforcesAdapter implements PlatformAdapter {
       const userInfoResponse = await fetch(
         `${this.baseUrl}/user.info?handles=${handle}`,
       );
-      const userInfoResult = await userInfoResponse.json() as any;
+      const userInfoResult = await userInfoResponse.json() as Record<string, unknown>;
 
       if (userInfoResult.status !== 'OK') {
-        if (userInfoResult.comment?.includes('not found')) {
+        const comment = (userInfoResult.comment as string | undefined) ?? '';
+        if (comment.includes('not found')) {
           throw new AdapterError(
             `User ${handle} not found on Codeforces`,
             'NOT_FOUND',
@@ -43,7 +44,7 @@ export class CodeforcesAdapter implements PlatformAdapter {
           );
         }
         throw new AdapterError(
-          `Codeforces API error: ${userInfoResult.comment}`,
+          `Codeforces API error: ${userInfoResult.comment as string}`,
           'SERVER_ERROR',
           true,
         );
@@ -53,29 +54,30 @@ export class CodeforcesAdapter implements PlatformAdapter {
       const ratingResponse = await fetch(
         `${this.baseUrl}/user.rating?handle=${handle}`,
       );
-      const ratingResult = await ratingResponse.json() as any;
+      const ratingResult = await ratingResponse.json() as Record<string, unknown>;
 
       // 3. Fetch Recent Submissions (up to 10,000)
       const statusResponse = await fetch(
         `${this.baseUrl}/user.status?handle=${handle}&from=1&count=10000`,
       );
-      const statusResult = await statusResponse.json() as any;
+      const statusResult = await statusResponse.json() as Record<string, unknown>;
 
       return {
         platform: 'CODEFORCES',
         handle,
         data: {
-          info: userInfoResult.result[0],
-          ratingHistory: ratingResult.status === 'OK' ? ratingResult.result : [],
-          submissions: statusResult.status === 'OK' ? statusResult.result : [],
+          info: (userInfoResult.result as unknown[])[0],
+          ratingHistory: ratingResult.status === 'OK' ? (ratingResult.result as unknown[]) : [],
+          submissions: statusResult.status === 'OK' ? (statusResult.result as unknown[]) : [],
         },
         fetchedAt: new Date(),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (error instanceof AdapterError) throw error;
-      logger.error({ error: error.message, handle }, 'Failed to fetch Codeforces profile');
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error({ error: msg, handle }, 'Failed to fetch Codeforces profile');
       throw new AdapterError(
-        `Network error fetching Codeforces profile: ${error.message}`,
+        `Network error fetching Codeforces profile: ${msg}`,
         'NETWORK_ERROR',
         true,
       );
@@ -99,9 +101,9 @@ export class CodeforcesAdapter implements PlatformAdapter {
         `${this.baseUrl}/user.info?handles=${handle}`,
       );
       if (!response.ok) return false;
-      const result = await response.json() as any;
+      const result = await response.json() as Record<string, unknown>;
       if (result.status !== 'OK') return false;
-      const firstName: string = result.result[0]?.firstName ?? '';
+      const firstName: string = ((result.result as unknown[])[0] as Record<string, unknown>)?.firstName as string ?? '';
       return firstName.includes(token);
     } catch {
       return false;
@@ -119,11 +121,12 @@ export class CodeforcesAdapter implements PlatformAdapter {
         latencyMs: Date.now() - start,
         error: response.ok ? undefined : `HTTP ${response.status}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       return {
         ok: false,
         latencyMs: Date.now() - start,
-        error: error.message,
+        error: msg,
       };
     }
   }

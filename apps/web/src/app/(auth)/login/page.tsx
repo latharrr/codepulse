@@ -30,11 +30,11 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Sign-in form */}
+          {/* Real Google Sign-in */}
           <form
             action={async () => {
               'use server';
-              await signIn('credentials', { email: 'admin@lpu.ac.in', redirectTo: '/dashboard' });
+              await signIn('google', { redirectTo: '/dashboard' });
             }}
           >
             <button
@@ -52,6 +52,37 @@ export default function LoginPage() {
               Sign in with Google
             </button>
           </form>
+
+          {/* Dev Bypass Sign-in */}
+          {process.env.NODE_ENV !== 'production' && (
+            <div className="mt-6 border-t border-white/20 pt-6">
+              <p className="mb-4 text-center text-xs font-semibold text-white/50 uppercase tracking-wider">
+                Development Only
+              </p>
+              <form
+                action={async (formData) => {
+                  'use server';
+                  const email = formData.get('email') as string;
+                  await signIn('credentials', { email, redirectTo: '/dashboard' });
+                }}
+                className="flex gap-2"
+              >
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="dev@lpu.ac.in"
+                  className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 ring-1 ring-white/20 focus:outline-none focus:ring-white/50"
+                  required
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+                >
+                  Bypass
+                </button>
+              </form>
+            </div>
+          )}
 
           <p className="mt-6 text-center text-xs text-white/40">
             Use your university email (e.g. student@lpu.in).

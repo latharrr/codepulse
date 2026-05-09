@@ -7,7 +7,8 @@ import { ProfileNormalizer, NORMALIZER_VERSION } from './index';
 
 export class GitHubNormalizer implements ProfileNormalizer {
   normalize(raw: RawProfile): NormalizedMetricsOutput {
-    const data = raw.data;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = raw.data as any;
     const repos = data.repositories?.nodes || [];
     
     // 1. Compute Topic Mastery (Languages + Topics) & Repo Stats
@@ -48,7 +49,7 @@ export class GitHubNormalizer implements ProfileNormalizer {
 
     // 2. Compute Streaks & Activity
     const weeks = data.contributionsCollection?.contributionCalendar?.weeks || [];
-    let allDays: { date: string; count: number }[] = [];
+    const allDays: { date: string; count: number }[] = [];
     
     for (const week of weeks) {
       for (const day of week.contributionDays || []) {

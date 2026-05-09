@@ -1,14 +1,10 @@
-/**
- * Queue helpers used by server actions and route handlers in the web app.
- *
- * Queues are created lazily so Next.js build/static analysis does not open a
- * Redis connection just by importing a page that references a server action.
- */
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
+import { getEnv } from '@codepulse/config';
 import { QUEUE_NAMES } from '@codepulse/types';
 
-type WebQueues = {
+let redisConnection: Redis | null = null;
+let workerQueues: {
   verifyHandle: Queue;
   fetchGithub: Queue;
   fetchCodeforces: Queue;
@@ -16,14 +12,12 @@ type WebQueues = {
   recomputeScore: Queue;
   recomputeRanks: Queue;
   nightlyRefresh: Queue;
-};
+} | null = null;
 
-let redisConnection: Redis | null = null;
-let queueCache: WebQueues | null = null;
-
-function getRedisConnection() {
+export function getRedisConnection() {
   if (!redisConnection) {
-    redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    const env = getEnv();
+    redisConnection = new Redis(env.REDIS_URL, {
       maxRetriesPerRequest: null,
     });
   }
@@ -31,10 +25,11 @@ function getRedisConnection() {
   return redisConnection;
 }
 
-export function getQueues(): WebQueues {
-  if (!queueCache) {
+export function getQueues() {
+  if (!workerQueues) {
+    const connection = getRedisConnection();
     const defaultQueueOptions = {
-      connection: getRedisConnection(),
+      connection,
       defaultJobOptions: {
         attempts: 5,
         backoff: { type: 'exponential', delay: 1000 },
@@ -43,7 +38,7 @@ export function getQueues(): WebQueues {
       },
     };
 
-    queueCache = {
+    workerQueues = {
       verifyHandle: new Queue(QUEUE_NAMES.VERIFY_HANDLE, defaultQueueOptions),
       fetchGithub: new Queue(QUEUE_NAMES.FETCH_GITHUB, defaultQueueOptions),
       fetchCodeforces: new Queue(QUEUE_NAMES.FETCH_CODEFORCES, defaultQueueOptions),
@@ -54,12 +49,16 @@ export function getQueues(): WebQueues {
     };
   }
 
-  return queueCache;
+  return workerQueues;
 }
 
-export const queues = new Proxy({} as WebQueues, {
-  get(_target, property: string | symbol) {
-    if (typeof property !== 'string') return undefined;
-    return getQueues()[property as keyof WebQueues];
-  },
-});
+export async function closeQueues() {
+  const queues = workerQueues ? Object.values(workerQueues) : [];
+  await Promise.all(queues.map((queue) => queue.close()));
+  workerQueues = null;
+
+  if (redisConnection) {
+    await redisConnection.quit();
+    redisConnection = null;
+  }
+}

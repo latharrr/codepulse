@@ -54,7 +54,7 @@ export const AddHandleRequestSchema = z.object({
     .string()
     .min(1, 'Handle is required')
     .max(100, 'Handle too long')
-    .regex(/^[a-zA-Z0-9_\-\.]+$/, 'Handle contains invalid characters'),
+    .regex(/^[a-zA-Z0-9_\-.]+$/, 'Handle contains invalid characters'),
 });
 export type AddHandleRequest = z.infer<typeof AddHandleRequestSchema>;
 

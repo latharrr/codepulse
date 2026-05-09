@@ -8,7 +8,8 @@ import { getCanonicalTag } from './tag-map';
 
 export class CodeforcesNormalizer implements ProfileNormalizer {
   normalize(raw: RawProfile): NormalizedMetricsOutput {
-    const { info, ratingHistory, submissions } = raw.data;
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const { info, ratingHistory, submissions } = raw.data as any;
     
     const nowSecs = Date.now() / 1000;
     const ninetyDaysSecs = 90 * 24 * 60 * 60;
@@ -16,7 +17,7 @@ export class CodeforcesNormalizer implements ProfileNormalizer {
     const activeDays = new Set<string>();
     const activeDays90Set = new Set<string>();
     
-    submissions.forEach((s: any) => {
+    (submissions as any[]).forEach((s) => {
       const date = new Date(s.creationTimeSeconds * 1000).toISOString().split('T')[0]!;
       activeDays.add(date);
       
@@ -54,15 +55,16 @@ export class CodeforcesNormalizer implements ProfileNormalizer {
       }
     }
 
-    let lastActiveAt = sortedDays.length > 0 ? new Date(sortedDays[sortedDays.length - 1]!) : new Date();
+    const lastActiveAt = sortedDays.length > 0 ? new Date(sortedDays[sortedDays.length - 1]!) : new Date();
 
-    const solvedSubmissions = submissions.filter((s: any) => s.verdict === 'OK');
+    const solvedSubmissions = (submissions as any[]).filter((s) => s.verdict === 'OK');
     const uniqueProblems = new Map<string, any>();
     
-    solvedSubmissions.forEach((s: any) => {
-      const id = `${s.problem.contestId}-${s.problem.index}`;
+    solvedSubmissions.forEach((s) => {
+      const prob = s.problem;
+      const id = `${prob.contestId}-${prob.index}`;
       if (!uniqueProblems.has(id)) {
-        uniqueProblems.set(id, s.problem);
+        uniqueProblems.set(id, prob);
       }
     });
 
@@ -72,11 +74,12 @@ export class CodeforcesNormalizer implements ProfileNormalizer {
     const topics: TopicMastery = {};
 
     Array.from(uniqueProblems.values()).forEach(p => {
-      if (!p.rating) {
+      const rating = p.rating;
+      if (!rating) {
         solvedEasy++;
-      } else if (p.rating < 1400) {
+      } else if (rating < 1400) {
         solvedEasy++;
-      } else if (p.rating <= 1900) {
+      } else if (rating <= 1900) {
         solvedMedium++;
       } else {
         solvedHard++;
@@ -107,5 +110,6 @@ export class CodeforcesNormalizer implements ProfileNormalizer {
       platformPercentile: null,
       normalizerVersion: NORMALIZER_VERSION
     };
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   }
 }

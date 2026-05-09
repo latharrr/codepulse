@@ -31,6 +31,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/*.js',    // compiled output
       '**/*.cjs',
+      '**/*.mjs',
       '**/prisma/generated/**',
     ],
   },
