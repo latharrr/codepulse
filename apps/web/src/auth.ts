@@ -19,32 +19,35 @@ import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET || 'fallback_secret_for_typecheck',
-  adapter: {
-    ...PrismaAdapter(prisma),
-    createUser: async (data) => {
-      // Find the default institution
-      const institution = await prisma.institution.findFirst({
-        where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
-      });
-      if (!institution) throw new Error('Default institution not found in database');
+  adapter: (function () {
+    const adapter = PrismaAdapter(prisma);
+    return {
+      ...adapter,
+      createUser: async (data: any) => {
+        // Find the default institution
+        const institution = await prisma.institution.findFirst({
+          where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
+        });
+        if (!institution) throw new Error('Default institution not found in database');
 
-      // Assign ADMIN role to specific email
-      const role = data.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
+        // Assign ADMIN role to specific email
+        const role = data.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
 
-      const user = await prisma.user.create({
-        data: {
-          ...data,
-          role,
-          institutionId: institution.id,
-        },
-      });
+        const user = await prisma.user.create({
+          data: {
+            ...data,
+            role,
+            institutionId: institution.id,
+          },
+        });
 
-      return {
-        ...user,
-        emailVerified: data.emailVerified,
-      } as any; // Cast to any to bypass strict NextAuth adapter type checks
-    },
-  },
+        return {
+          ...user,
+          emailVerified: data.emailVerified,
+        } as any;
+      },
+    };
+  })(),
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
