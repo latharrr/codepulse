@@ -19,7 +19,27 @@ import Credentials from 'next-auth/providers/credentials';
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET || 'fallback_secret_for_typecheck',
-  adapter: PrismaAdapter(prisma),
+  adapter: {
+    ...PrismaAdapter(prisma),
+    createUser: async (data) => {
+      // Find the default institution
+      const institution = await prisma.institution.findFirst({
+        where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
+      });
+      if (!institution) throw new Error('Default institution not found in database');
+
+      // Assign ADMIN role to specific email
+      const role = data.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
+
+      return prisma.user.create({
+        data: {
+          ...data,
+          role,
+          institutionId: institution.id,
+        },
+      });
+    },
+  },
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
@@ -27,17 +47,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
     Credentials({
       name: 'Development Bypass',
-      credentials: { email: { label: "Email", type: "email", placeholder: "admin@lpu.ac.in" } },
+      credentials: {
+        email: { label: 'Email', type: 'email', placeholder: 'admin@lpu.ac.in' },
+      },
       async authorize(credentials) {
         if (!credentials?.email) return null;
-        let user = await prisma.user.findUnique({ where: { email: credentials.email as string } });
+        let user = await prisma.user.findUnique({
+          where: { email: credentials.email as string },
+        });
         if (!user) {
-          const institution = await prisma.institution.findUnique({ where: { slug: 'lpu' } });
-          if (!institution) throw new Error('Default institution LPU not found in database');
-          user = await prisma.user.create({ data: { email: credentials.email as string, fullName: "Dev User", institutionId: institution.id } });
+          const institution = await prisma.institution.findUnique({
+            where: { slug: 'lpu' },
+          });
+          if (!institution)
+            throw new Error('Default institution LPU not found in database');
+          user = await prisma.user.create({
+            data: {
+              email: credentials.email as string,
+              fullName: 'Dev User',
+              institutionId: institution.id,
+            },
+          });
         }
         return user;
-      }
+      },
     }),
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID!,
