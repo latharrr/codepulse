@@ -2,30 +2,13 @@
 FROM node:20-alpine3.18 AS base
 RUN npm install -g pnpm@9
 
-# 1. Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-progress --no-cache libc6-compat
-WORKDIR /app
-
-# Copy root files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Copy all package.json files for workspace dependency resolution
-COPY apps/web/package.json ./apps/web/
-COPY apps/worker/package.json ./apps/worker/
-COPY packages/db/package.json ./packages/db/
-COPY packages/adapters/package.json ./packages/adapters/
-COPY packages/normalizer/package.json ./packages/normalizer/
-COPY packages/scoring/package.json ./packages/scoring/
-COPY packages/types/package.json ./packages/types/
-COPY packages/config/package.json ./packages/config/
-
-RUN pnpm install --frozen-lockfile
-
-# 2. Rebuild the source code only when needed
+# Builder stage
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Install all dependencies
+RUN pnpm install --frozen-lockfile
 
 # Generate Prisma Client
 RUN pnpm db:generate
@@ -33,7 +16,7 @@ RUN pnpm db:generate
 # Build the web app
 RUN pnpm build --filter=@codepulse/web
 
-# 3. Production image, copy all the files and run next
+# Runner stage
 FROM node:20-alpine3.18 AS runner
 WORKDIR /app
 
@@ -55,5 +38,5 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-# Note: The standalone build copies only the necessary files for the specific app
+# Start the Next.js server
 CMD ["node", "apps/web/server.js"]
