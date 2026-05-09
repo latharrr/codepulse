@@ -2,38 +2,28 @@
 FROM node:20-alpine AS base
 RUN npm install -g pnpm
 
-# 1. Install dependencies
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/worker/package.json ./apps/worker/
-COPY packages/db/package.json ./packages/db/
-COPY packages/adapters/package.json ./packages/adapters/
-COPY packages/normalizer/package.json ./packages/normalizer/
-COPY packages/scoring/package.json ./packages/scoring/
-COPY packages/types/package.json ./packages/types/
-COPY packages/config/package.json ./packages/config/
-
-RUN pnpm install --frozen-lockfile
-
-# 2. Build the worker
+# Builder stage
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
+RUN pnpm install --frozen-lockfile
 RUN pnpm db:generate
 RUN pnpm build --filter=@codepulse/worker
 
-# 3. Production runner
+# Deploy the worker to a standalone directory
+# This resolves symlinks and creates a self-contained folder
+RUN pnpm --filter=@codepulse/worker --prod deploy /app/deployed-worker
+
+# Runner stage
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV production
 
-# Copy built files and dependencies
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
-COPY --from=builder /app/apps/worker/package.json ./apps/worker/package.json
-COPY --from=builder /app/packages ./packages
+# Copy the deployed worker
+COPY --from=builder /app/deployed-worker ./
 
-CMD ["node", "apps/worker/dist/index.js"]
+# Also copy the prisma schema and migrations for db commands
+COPY --from=builder /app/packages/db/prisma ./prisma
+
+# The build output is in dist/
+CMD ["node", "dist/index.js"]
