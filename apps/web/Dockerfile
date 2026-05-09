@@ -1,6 +1,5 @@
 # Base image
-FROM node:20-alpine AS base
-RUN apk add --no-cache openssl1.1-compat
+FROM node:20-alpine3.18 AS base
 RUN npm install -g pnpm
 
 # 1. Install dependencies only when needed
@@ -35,7 +34,7 @@ RUN pnpm db:generate
 RUN pnpm build --filter=@codepulse/web
 
 # 3. Production image, copy all the files and run next
-FROM node:20-alpine AS runner
+FROM node:20-alpine3.18 AS runner
 WORKDIR /app
 
 ENV NODE_ENV production

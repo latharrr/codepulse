@@ -1,6 +1,5 @@
 # Base image
-FROM node:20-alpine AS base
-RUN apk add --no-cache openssl1.1-compat
+FROM node:20-alpine3.18 AS base
 RUN npm install -g pnpm
 
 # Builder stage
@@ -21,7 +20,7 @@ RUN pnpm --filter=@codepulse/worker bundle
 RUN pnpm --filter=@codepulse/worker --prod deploy /app/deployed-worker
 
 # Runner stage
-FROM node:20-alpine AS runner
+FROM node:20-alpine3.18 AS runner
 WORKDIR /app
 ENV NODE_ENV production
 
