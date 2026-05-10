@@ -8,6 +8,7 @@ import { FetchProfileJob } from '@codepulse/types';
 import { GitHubAdapter, snapshotStore } from '@codepulse/adapters';
 import { GitHubNormalizer } from '@codepulse/normalizer';
 import { getQueues } from '../queues';
+import { isCurrentVerifiedFetchJob } from './handleState';
 
 const logger = createLogger('worker:processor:github');
 export async function fetchGithubProcessor(job: Job<FetchProfileJob>) {
@@ -21,8 +22,20 @@ export async function fetchGithubProcessor(job: Job<FetchProfileJob>) {
   const normalizer = new GitHubNormalizer();
 
   try {
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale GitHub fetch job');
+      return { stale: true };
+    }
+
     // 2. Fetch Raw Profile
     const rawProfile = await adapter.fetchProfile(handle);
+
+    const stillCurrentAfterFetch = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrentAfterFetch) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale GitHub fetch result');
+      return { stale: true };
+    }
 
     // 3. Store Snapshot
     const { storageKey, payloadHash } = await snapshotStore.put(
@@ -107,6 +120,16 @@ export async function fetchGithubProcessor(job: Job<FetchProfileJob>) {
     const msg = error instanceof Error ? error.message : String(error);
     const errCode = ((error as Record<string, unknown>).code as string) || 'UNKNOWN';
     const durationMs = Date.now() - startTime;
+
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info(
+        { handleId, userId, handle, error: msg },
+        'Skipping stale GitHub fetch failure',
+      );
+      return { stale: true };
+    }
+
     const { storageKey, payloadHash } = await snapshotStore.put(
       `github_${handle}_error`,
       { error: msg },

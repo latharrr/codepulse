@@ -85,6 +85,14 @@ export default function HandlesPage() {
       setNotice({ tone: 'success', text: result.message });
       setHandles((current) => ({ ...current, [platform]: '' }));
       await loadExistingHandles();
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to connect handle. Please try again.',
+      });
     } finally {
       setLoading(null);
     }
@@ -103,6 +111,14 @@ export default function HandlesPage() {
 
       setNotice({ tone: 'success', text: result.message });
       await loadExistingHandles();
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to queue handle work. Please try again.',
+      });
     } finally {
       setLoading(null);
     }

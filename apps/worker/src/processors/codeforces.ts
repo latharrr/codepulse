@@ -8,6 +8,7 @@ import { FetchProfileJob } from '@codepulse/types';
 import { CodeforcesAdapter, snapshotStore } from '@codepulse/adapters';
 import { CodeforcesNormalizer } from '@codepulse/normalizer';
 import { getQueues } from '../queues';
+import { isCurrentVerifiedFetchJob } from './handleState';
 
 const logger = createLogger('worker:processor:codeforces');
 
@@ -20,7 +21,20 @@ export async function fetchCodeforcesProcessor(job: Job<FetchProfileJob>) {
   const normalizer = new CodeforcesNormalizer();
 
   try {
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale Codeforces fetch job');
+      return { stale: true };
+    }
+
     const rawProfile = await adapter.fetchProfile(handle);
+
+    const stillCurrentAfterFetch = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrentAfterFetch) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale Codeforces fetch result');
+      return { stale: true };
+    }
+
     const { storageKey, payloadHash } = await snapshotStore.put(
       `codeforces_${handle}`,
       rawProfile,
@@ -99,6 +113,16 @@ export async function fetchCodeforcesProcessor(job: Job<FetchProfileJob>) {
     const msg = error instanceof Error ? error.message : String(error);
     const errCode = ((error as Record<string, unknown>).code as string) || 'UNKNOWN';
     const durationMs = Date.now() - startTime;
+
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info(
+        { handleId, userId, handle, error: msg },
+        'Skipping stale Codeforces fetch failure',
+      );
+      return { stale: true };
+    }
+
     const { storageKey, payloadHash } = await snapshotStore.put(
       `codeforces_${handle}_error`,
       { error: msg },

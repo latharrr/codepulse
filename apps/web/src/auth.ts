@@ -1,23 +1,73 @@
 /**
  * Auth.js (NextAuth v5) configuration.
  *
- * Providers:
- * - Google OAuth — primary sign-in (university Google Workspace)
- * - GitHub OAuth — used for platform handle linking (Step 2)
- *
- * After successful Google sign-in:
- * - If user exists with onboarding complete → redirect to /dashboard
- * - If user exists but no regno → redirect to /onboarding
- * - If new user → create user record, redirect to /onboarding
+ * Google sign-in accepts personal and organization Google accounts.
+ * The configured admin email is promoted automatically and routed to /admin.
  */
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
 import GitHub from 'next-auth/providers/github';
-import { prisma } from '@codepulse/db';
 import Credentials from 'next-auth/providers/credentials';
+import { prisma } from '@codepulse/db';
+import {
+  getAuthSecret,
+  isAdminEmail,
+  isPrivilegedRole,
+  normalizeEmail,
+} from '@/lib/auth-rules';
+import { getOrCreateDefaultInstitution } from '@/lib/institution';
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  secret: process.env.AUTH_SECRET || 'fallback_secret_for_typecheck',
+async function findUserByEmail(email: string) {
+  return prisma.user.findFirst({
+    where: { email: { equals: normalizeEmail(email), mode: 'insensitive' } },
+  });
+}
+
+async function ensureApplicationUser(email: string, fullName?: string | null) {
+  const normalizedEmail = normalizeEmail(email);
+  const displayName = fullName?.trim() || null;
+  const existing = await findUserByEmail(normalizedEmail);
+  const role = isAdminEmail(normalizedEmail) ? 'ADMIN' : 'STUDENT';
+
+  if (existing) {
+    const shouldPromoteAdmin = role === 'ADMIN' && !isPrivilegedRole(existing.role);
+    const shouldNormalizeEmail = existing.email !== normalizedEmail;
+    const shouldBackfillName = !!displayName && !existing.fullName;
+
+    if (shouldPromoteAdmin || shouldNormalizeEmail || shouldBackfillName) {
+      return prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          ...(shouldNormalizeEmail ? { email: normalizedEmail } : {}),
+          ...(shouldBackfillName ? { fullName: displayName } : {}),
+          ...(shouldPromoteAdmin ? { role: 'ADMIN' } : {}),
+        },
+      });
+    }
+
+    return existing;
+  }
+
+  const institution = await getOrCreateDefaultInstitution();
+
+  return prisma.user.create({
+    data: {
+      email: normalizedEmail,
+      fullName: displayName,
+      role,
+      institutionId: institution.id,
+    },
+  });
+}
+
+export const {
+  handlers,
+  auth,
+  signIn,
+  signOut,
+  unstable_update: updateSession,
+} = NextAuth({
+  secret: getAuthSecret(),
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID!,
@@ -29,25 +79,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: 'Email', type: 'email', placeholder: 'admin@lpu.ac.in' },
       },
       async authorize(credentials) {
-        if (!credentials?.email) return null;
-        let user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        });
-        if (!user) {
-          const institution = await prisma.institution.findUnique({
-            where: { slug: 'lpu' },
-          });
-          if (!institution)
-            throw new Error('Default institution LPU not found in database');
-          user = await prisma.user.create({
-            data: {
-              email: credentials.email as string,
-              fullName: 'Dev User',
-              institutionId: institution.id,
-            },
-          });
-        }
-        return user;
+        const email = credentials?.email?.toString();
+        if (!email) return null;
+        return ensureApplicationUser(email, 'Dev User');
       },
     }),
     GitHub({
@@ -64,13 +98,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     async jwt({ token, user }) {
-      if (user && user.id) {
-        // Persist user id and role in the JWT
-        token.userId = user.id as string;
-      }
-      if (token.userId) {
-        const dbUser = await prisma.user.findUnique({
-          where: { email: token.email! },
+      const email = user?.email ?? token.email;
+
+      if (email) {
+        const normalizedEmail = normalizeEmail(email);
+        token.email = normalizedEmail;
+
+        const dbUser = await prisma.user.findFirst({
+          where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
           select: { id: true, role: true, regno: true, institutionId: true },
         });
         if (dbUser) {
@@ -78,7 +113,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           token.role = dbUser.role;
           token.regno = dbUser.regno;
           token.institutionId = dbUser.institutionId;
-          token.onboardingComplete = !!dbUser.regno;
+          token.onboardingComplete = isPrivilegedRole(dbUser.role) || !!dbUser.regno;
         }
       }
       return token;
@@ -99,31 +134,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return false;
       }
 
-      // Auto-provision user on Google sign-in
+      // Auto-provision user on Google sign-in. Any Google account is allowed.
       if (account?.provider === 'google' && user.email) {
-        const existing = await prisma.user.findUnique({
-          where: { email: user.email },
-        });
-        if (!existing) {
-          const institution = await prisma.institution.findFirst({
-            where: { slug: process.env.DEFAULT_INSTITUTION_SLUG || 'lpu' },
-          });
-          if (!institution) {
-            console.error('[auth] default institution not found');
-            return false;
-          }
-          const role = user.email === 'deepanshulathar@gmail.com' ? 'ADMIN' : 'STUDENT';
-          await prisma.user.create({
-            data: {
-              email: user.email,
-              fullName: user.name ?? null,
-              role,
-              institutionId: institution.id,
-            },
-          });
-        }
+        const dbUser = await ensureApplicationUser(user.email, user.name);
+        user.id = dbUser.id;
+        user.email = dbUser.email;
+        user.name = dbUser.fullName ?? user.name ?? null;
       }
       return true;
+    },
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      if (new URL(url).origin === baseUrl) return url;
+      return baseUrl;
     },
   },
 });

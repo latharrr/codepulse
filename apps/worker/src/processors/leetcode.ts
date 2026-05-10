@@ -8,6 +8,7 @@ import { FetchProfileJob } from '@codepulse/types';
 import { LeetCodeAdapter, snapshotStore } from '@codepulse/adapters';
 import { LeetCodeNormalizer } from '@codepulse/normalizer';
 import { getQueues } from '../queues';
+import { isCurrentVerifiedFetchJob } from './handleState';
 
 const logger = createLogger('worker:processor:leetcode');
 
@@ -20,7 +21,20 @@ export async function fetchLeetcodeProcessor(job: Job<FetchProfileJob>) {
   const normalizer = new LeetCodeNormalizer();
 
   try {
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale LeetCode fetch job');
+      return { stale: true };
+    }
+
     const rawProfile = await adapter.fetchProfile(handle);
+
+    const stillCurrentAfterFetch = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrentAfterFetch) {
+      logger.info({ handleId, userId, handle }, 'Skipping stale LeetCode fetch result');
+      return { stale: true };
+    }
+
     const { storageKey, payloadHash } = await snapshotStore.put(
       `leetcode_${handle}`,
       rawProfile,
@@ -99,6 +113,16 @@ export async function fetchLeetcodeProcessor(job: Job<FetchProfileJob>) {
     const msg = error instanceof Error ? error.message : String(error);
     const errCode = ((error as Record<string, unknown>).code as string) || 'UNKNOWN';
     const durationMs = Date.now() - startTime;
+
+    const stillCurrent = await isCurrentVerifiedFetchJob(job.data);
+    if (!stillCurrent) {
+      logger.info(
+        { handleId, userId, handle, error: msg },
+        'Skipping stale LeetCode fetch failure',
+      );
+      return { stale: true };
+    }
+
     const { storageKey, payloadHash } = await snapshotStore.put(
       `leetcode_${handle}_error`,
       { error: msg },

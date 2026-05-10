@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
+const useStandaloneOutput =
+  process.env.NEXT_OUTPUT_STANDALONE === 'true' || process.platform !== 'win32';
+
 const nextConfig = {
-  output: 'standalone',
+  ...(useStandaloneOutput ? { output: 'standalone' } : {}),
   reactStrictMode: true,
   transpilePackages: ['@codepulse/config', '@codepulse/db', '@codepulse/types'],
   experimental: {

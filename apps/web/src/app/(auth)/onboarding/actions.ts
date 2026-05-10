@@ -6,9 +6,11 @@
  */
 'use server';
 
-import { auth } from '@/auth';
+import { auth, updateSession } from '@/auth';
 import { prisma } from '@codepulse/db';
 import { parseRegno, LPU_REGNO_CONFIG, OnboardingInputSchema } from '@codepulse/types';
+import { normalizeEmail } from '@/lib/auth-rules';
+import { getOrCreateDefaultInstitution } from '@/lib/institution';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -25,15 +27,17 @@ export async function completeOnboarding(
   formData: FormData,
 ): Promise<OnboardingActionResult> {
   const session = await auth();
-  if (!session?.user?.email) {
+  if (!session?.user?.id || !session.user.email) {
     return { ok: false, error: 'Not authenticated. Please sign in again.' };
   }
+  const email = normalizeEmail(session.user.email);
 
   // ── Parse form data ────────────────────────────────────────
+  const section = formData.get('section')?.toString().trim();
   const raw = {
-    regno: formData.get('regno')?.toString() ?? '',
-    branch: formData.get('branch')?.toString() ?? '',
-    section: formData.get('section')?.toString() ?? '',
+    regno: formData.get('regno')?.toString().trim() ?? '',
+    branch: formData.get('branch')?.toString().trim() ?? '',
+    section: section || undefined,
   };
 
   const parsed = OnboardingInputSchema.safeParse(raw);
@@ -48,16 +52,7 @@ export async function completeOnboarding(
 
   // ── Load institution ───────────────────────────────────────
   // Phase 1: single institution (LPU). Phase 2: derive from email domain.
-  const institution = await prisma.institution.findUnique({
-    where: { slug: process.env.DEFAULT_INSTITUTION_SLUG ?? 'lpu' },
-  });
-
-  if (!institution) {
-    return {
-      ok: false,
-      error: 'Institution configuration not found. Contact support.',
-    };
-  }
+  const institution = await getOrCreateDefaultInstitution();
 
   // ── Parse regno ────────────────────────────────────────────
   // TODO Phase 2: load config from institution.regnoConfig instead of LPU_REGNO_CONFIG
@@ -75,7 +70,7 @@ export async function completeOnboarding(
     where: {
       institutionId: institution.id,
       regno: regnoResult.regno,
-      NOT: { email: session.user.email },
+      NOT: { id: session.user.id },
     },
   });
 
@@ -89,9 +84,10 @@ export async function completeOnboarding(
 
   // ── Upsert user profile ────────────────────────────────────
   try {
-    await prisma.user.upsert({
-      where: { email: session.user.email },
-      update: {
+    const user = await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        email,
         institutionId: institution.id,
         regno: regnoResult.regno,
         branch: parsed.data.branch,
@@ -99,18 +95,15 @@ export async function completeOnboarding(
         batchYear: regnoResult.batchYear,
         currentYear: regnoResult.currentYear,
       },
-      create: {
-        institutionId: institution.id,
-        email: session.user.email,
-        fullName: session.user.name ?? session.user.email,
-        regno: regnoResult.regno,
-        branch: parsed.data.branch,
-        section: parsed.data.section ?? null,
-        batchYear: regnoResult.batchYear,
-        currentYear: regnoResult.currentYear,
-        role: 'STUDENT',
-        status: 'ACTIVE',
-        visibility: {},
+    });
+
+    await updateSession({
+      user: {
+        id: user.id,
+        role: user.role,
+        regno: user.regno,
+        institutionId: user.institutionId,
+        onboardingComplete: true,
       },
     });
   } catch (e) {

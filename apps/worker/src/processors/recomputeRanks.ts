@@ -16,7 +16,7 @@ type RankInput = {
 
 export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
   logger.info('Starting global rank recomputation');
-  
+
   try {
     // 1. Fetch all users with a computed score
     const usersWithScores = await prisma.user.findMany({
@@ -28,9 +28,9 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
         branch: true,
         section: true,
         score: {
-          select: { codepulseScore: true }
-        }
-      }
+          select: { codepulseScore: true },
+        },
+      },
     });
 
     if (usersWithScores.length === 0) {
@@ -42,7 +42,11 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
     type UserScore = { id: string; score: number };
     const groups = new Map<string, UserScore[]>();
 
-    const addGroup = (scope: string, value: string | null | undefined, userScore: UserScore) => {
+    const addGroup = (
+      scope: string,
+      value: string | null | undefined,
+      userScore: UserScore,
+    ) => {
       if (!value) return;
       const key = `${scope}:::${value}`;
       if (!groups.has(key)) groups.set(key, []);
@@ -51,16 +55,16 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
 
     for (const u of usersWithScores) {
       const us = { id: u.id, score: Number(u.score!.codepulseScore) };
-      
+
       // CAMPUS Scope
       addGroup('CAMPUS', u.institutionId, us);
-      
+
       // YEAR Scope
       if (u.batchYear) addGroup('YEAR', u.batchYear.toString(), us);
-      
+
       // BRANCH Scope
       if (u.branch) addGroup('BRANCH', u.branch, us);
-      
+
       // SECTION Scope
       if (u.section) addGroup('SECTION', u.section, us);
     }
@@ -70,13 +74,13 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
     // 2. Compute ranks for each group
     for (const [key, users] of groups.entries()) {
       const [scope, scopeValue] = key.split(':::') as [RankInput['scope'], string];
-      
+
       // Sort descending by score
       users.sort((a, b) => b.score - a.score);
-      
+
       const cohortSize = users.length;
       let currentRank = 1;
-      
+
       for (let i = 0; i < cohortSize; i++) {
         const currentUser = users[i];
         if (!currentUser) continue;
@@ -88,10 +92,9 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
             currentRank = i + 1;
           }
         }
-        
-        const percentile = cohortSize > 1 
-          ? ((cohortSize - currentRank) / cohortSize) * 100 
-          : 100;
+
+        const percentile =
+          cohortSize > 1 ? ((cohortSize - currentRank) / (cohortSize - 1)) * 100 : 100;
 
         rankInputs.push({
           userId: currentUser.id,
@@ -99,29 +102,31 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
           scopeValue,
           rank: currentRank,
           percentile,
-          cohortSize
+          cohortSize,
         });
       }
     }
 
     // 3. Atomically replace the Ranks table
-    // For MVP, we can delete all ranks and re-insert. 
+    // For MVP, we can delete all ranks and re-insert.
     // In a transaction, this is completely invisible to the frontend until committed.
     await prisma.$transaction(async (tx) => {
       await tx.rank.deleteMany({});
-      
+
       // Insert in chunks of 5000 to avoid query size limits
       const chunkSize = 5000;
       for (let i = 0; i < rankInputs.length; i += chunkSize) {
         const chunk = rankInputs.slice(i, i + chunkSize);
         await tx.rank.createMany({
-          data: chunk
+          data: chunk,
         });
       }
     });
 
-    logger.info({ computedRankRows: rankInputs.length }, 'Successfully recomputed and saved all ranks');
-
+    logger.info(
+      { computedRankRows: rankInputs.length },
+      'Successfully recomputed and saved all ranks',
+    );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.error({ error: msg }, 'Failed to recompute ranks');

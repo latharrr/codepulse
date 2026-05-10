@@ -4,6 +4,7 @@ import { createLogger, getEnv } from '@codepulse/config';
 import { VerifyHandleJob } from '@codepulse/types';
 import { GitHubAdapter, CodeforcesAdapter, LeetCodeAdapter } from '@codepulse/adapters';
 import { getQueues } from '../queues';
+import { isCurrentVerificationJob } from './handleState';
 
 const logger = createLogger('worker:processor:verifyHandle');
 
@@ -17,6 +18,12 @@ export async function verifyHandleProcessor(job: Job<VerifyHandleJob>) {
   let verified = false;
 
   try {
+    const stillCurrent = await isCurrentVerificationJob(job.data);
+    if (!stillCurrent) {
+      logger.info({ handleId, handle, platform }, 'Skipping stale verification job');
+      return { verified: false, stale: true };
+    }
+
     if (platform === 'GITHUB') {
       const adapter = new GitHubAdapter(env.GITHUB_PAT_POOL);
       verified = await adapter.verifyBioToken(handle, verificationToken);
@@ -29,6 +36,12 @@ export async function verifyHandleProcessor(job: Job<VerifyHandleJob>) {
     }
 
     if (verified) {
+      const stillCurrentAfterFetch = await isCurrentVerificationJob(job.data);
+      if (!stillCurrentAfterFetch) {
+        logger.info({ handleId, handle, platform }, 'Skipping stale verification result');
+        return { verified: false, stale: true };
+      }
+
       await prisma.platformHandle.update({
         where: { id: handleId },
         data: {
@@ -69,6 +82,15 @@ export async function verifyHandleProcessor(job: Job<VerifyHandleJob>) {
 
       return { verified: true };
     } else {
+      const stillCurrentAfterFetch = await isCurrentVerificationJob(job.data);
+      if (!stillCurrentAfterFetch) {
+        logger.info(
+          { handleId, handle, platform },
+          'Skipping stale verification failure',
+        );
+        return { verified: false, stale: true };
+      }
+
       // Failed verification
       const handleRecord = await prisma.platformHandle.update({
         where: { id: handleId },

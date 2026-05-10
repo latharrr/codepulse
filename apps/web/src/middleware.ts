@@ -1,23 +1,33 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
+import { getAuthSecret, getHomePathForRole, isPrivilegedRole } from './lib/auth-rules';
+
+function useSecureAuthCookie(req: NextRequest) {
+  const authUrl = process.env.AUTH_URL ?? process.env.NEXTAUTH_URL;
+  if (authUrl) return authUrl.startsWith('https://');
+  return req.nextUrl.protocol === 'https:';
+}
 
 export async function middleware(req: NextRequest) {
-  // Cookie name + JWE salt must match what Auth.js used when signing the
-  // session. Auth.js picks `__Secure-` only when AUTH_URL is https://, not
-  // by NODE_ENV. We're served over plain HTTP, so use the unprefixed name.
-  const useSecureCookies = process.env.AUTH_URL?.startsWith('https://') ?? false;
-  const cookieName = useSecureCookies
+  const secureCookie = useSecureAuthCookie(req);
+  const cookieName = secureCookie
     ? '__Secure-authjs.session-token'
     : 'authjs.session-token';
   const token = await getToken({
     req,
-    secret: (process.env.AUTH_SECRET || 'fallback') as string,
-    cookieName,
+    secret: getAuthSecret(),
+    secureCookie,
     salt: cookieName,
     raw: false,
   });
   const { pathname } = req.nextUrl;
+  const isAdmin = isPrivilegedRole(token?.role as string | undefined);
+  const signedInHome = isAdmin
+    ? getHomePathForRole(token?.role as string | undefined)
+    : token?.onboardingComplete
+      ? '/dashboard'
+      : '/onboarding';
 
   // Use req.nextUrl as the base for redirects: `req.url` reports the
   // internal Docker host (http://0.0.0.0:3000/...) under standalone mode,
@@ -29,8 +39,8 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth')
   ) {
-    if (token && pathname.startsWith('/login')) {
-      return NextResponse.redirect(new URL('/dashboard', req.nextUrl));
+    if (token && (pathname === '/' || pathname.startsWith('/login'))) {
+      return NextResponse.redirect(new URL(signedInHome, req.nextUrl));
     }
     return NextResponse.next();
   }
@@ -40,6 +50,17 @@ export async function middleware(req: NextRequest) {
     const loginUrl = new URL('/login', req.nextUrl);
     loginUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if (
+    isAdmin &&
+    (pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding'))
+  ) {
+    return NextResponse.redirect(new URL('/admin', req.url));
+  }
+
+  if (!isAdmin && pathname.startsWith('/admin')) {
+    return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
   // Onboarding check

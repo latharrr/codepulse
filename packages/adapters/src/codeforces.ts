@@ -7,12 +7,7 @@
  * verifyBioToken: checks user.info[0].firstName for the token.
  * Students must temporarily set their CF firstName to the token, then revert.
  */
-import {
-  PlatformAdapter,
-  RawProfile,
-  AdapterError,
-  AdapterHealthCheck,
-} from './types';
+import { PlatformAdapter, RawProfile, AdapterError, AdapterHealthCheck } from './types';
 import { createLogger } from '@codepulse/config';
 
 const logger = createLogger('adapter:codeforces');
@@ -25,13 +20,14 @@ export class CodeforcesAdapter implements PlatformAdapter {
 
   async fetchProfile(handle: string): Promise<RawProfile> {
     logger.debug({ handle }, 'Fetching Codeforces profile');
+    const encodedHandle = encodeURIComponent(handle);
 
     try {
       // 1. Fetch User Info
       const userInfoResponse = await fetch(
-        `${this.baseUrl}/user.info?handles=${handle}`,
+        `${this.baseUrl}/user.info?handles=${encodedHandle}`,
       );
-      const userInfoResult = await userInfoResponse.json() as Record<string, unknown>;
+      const userInfoResult = (await userInfoResponse.json()) as Record<string, unknown>;
 
       if (userInfoResult.status !== 'OK') {
         const comment = (userInfoResult.comment as string | undefined) ?? '';
@@ -52,23 +48,25 @@ export class CodeforcesAdapter implements PlatformAdapter {
 
       // 2. Fetch Rating History
       const ratingResponse = await fetch(
-        `${this.baseUrl}/user.rating?handle=${handle}`,
+        `${this.baseUrl}/user.rating?handle=${encodedHandle}`,
       );
-      const ratingResult = await ratingResponse.json() as Record<string, unknown>;
+      const ratingResult = (await ratingResponse.json()) as Record<string, unknown>;
 
       // 3. Fetch Recent Submissions (up to 10,000)
       const statusResponse = await fetch(
-        `${this.baseUrl}/user.status?handle=${handle}&from=1&count=10000`,
+        `${this.baseUrl}/user.status?handle=${encodedHandle}&from=1&count=10000`,
       );
-      const statusResult = await statusResponse.json() as Record<string, unknown>;
+      const statusResult = (await statusResponse.json()) as Record<string, unknown>;
 
       return {
         platform: 'CODEFORCES',
         handle,
         data: {
           info: (userInfoResult.result as unknown[])[0],
-          ratingHistory: ratingResult.status === 'OK' ? (ratingResult.result as unknown[]) : [],
-          submissions: statusResult.status === 'OK' ? (statusResult.result as unknown[]) : [],
+          ratingHistory:
+            ratingResult.status === 'OK' ? (ratingResult.result as unknown[]) : [],
+          submissions:
+            statusResult.status === 'OK' ? (statusResult.result as unknown[]) : [],
         },
         fetchedAt: new Date(),
       };
@@ -97,13 +95,14 @@ export class CodeforcesAdapter implements PlatformAdapter {
    */
   async verifyBioToken(handle: string, token: string): Promise<boolean> {
     try {
-      const response = await fetch(
-        `${this.baseUrl}/user.info?handles=${handle}`,
-      );
+      const encodedHandle = encodeURIComponent(handle);
+      const response = await fetch(`${this.baseUrl}/user.info?handles=${encodedHandle}`);
       if (!response.ok) return false;
-      const result = await response.json() as Record<string, unknown>;
+      const result = (await response.json()) as Record<string, unknown>;
       if (result.status !== 'OK') return false;
-      const firstName: string = ((result.result as unknown[])[0] as Record<string, unknown>)?.firstName as string ?? '';
+      const firstName: string =
+        (((result.result as unknown[])[0] as Record<string, unknown>)
+          ?.firstName as string) ?? '';
       return firstName.includes(token);
     } catch {
       return false;
@@ -113,9 +112,7 @@ export class CodeforcesAdapter implements PlatformAdapter {
   async healthCheck(): Promise<AdapterHealthCheck> {
     const start = Date.now();
     try {
-      const response = await fetch(
-        `${this.baseUrl}/user.info?handles=tourist`,
-      );
+      const response = await fetch(`${this.baseUrl}/user.info?handles=tourist`);
       return {
         ok: response.ok,
         latencyMs: Date.now() - start,

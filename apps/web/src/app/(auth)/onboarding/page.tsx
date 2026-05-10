@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { auth } from '@/auth';
+import { isPrivilegedRole } from '@/lib/auth-rules';
 import { redirect } from 'next/navigation';
 import { OnboardingForm } from './OnboardingForm';
 import { getBranches } from './actions';
@@ -19,6 +20,8 @@ export default async function OnboardingPage() {
   // If not authenticated, middleware will redirect — this is a safety net
   if (!session?.user) redirect('/login');
 
+  if (isPrivilegedRole(session.user.role)) redirect('/admin');
+
   // If already onboarded, skip straight to dashboard
   if (session.user.onboardingComplete) redirect('/dashboard');
 
@@ -30,11 +33,39 @@ export default async function OnboardingPage() {
         {/* Header */}
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
-            <svg className="h-6 w-6 text-primary-foreground" viewBox="0 0 40 40" fill="none">
-              <rect x="2" y="20" width="6" height="18" rx="1" fill="currentColor" fillOpacity="0.6"/>
-              <rect x="11" y="12" width="6" height="26" rx="1" fill="currentColor" fillOpacity="0.8"/>
-              <rect x="20" y="6" width="6" height="32" rx="1" fill="currentColor"/>
-              <rect x="29" y="14" width="6" height="24" rx="1" fill="currentColor" fillOpacity="0.7"/>
+            <svg
+              className="h-6 w-6 text-primary-foreground"
+              viewBox="0 0 40 40"
+              fill="none"
+            >
+              <rect
+                x="2"
+                y="20"
+                width="6"
+                height="18"
+                rx="1"
+                fill="currentColor"
+                fillOpacity="0.6"
+              />
+              <rect
+                x="11"
+                y="12"
+                width="6"
+                height="26"
+                rx="1"
+                fill="currentColor"
+                fillOpacity="0.8"
+              />
+              <rect x="20" y="6" width="6" height="32" rx="1" fill="currentColor" />
+              <rect
+                x="29"
+                y="14"
+                width="6"
+                height="24"
+                rx="1"
+                fill="currentColor"
+                fillOpacity="0.7"
+              />
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-foreground">Complete Your Profile</h1>
@@ -72,10 +103,7 @@ export default async function OnboardingPage() {
 
         {/* Form card */}
         <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-          <OnboardingForm
-            branches={branches}
-            userEmail={session.user.email ?? ''}
-          />
+          <OnboardingForm branches={branches} userEmail={session.user.email ?? ''} />
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
