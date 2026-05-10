@@ -31,8 +31,13 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
-# Copy Prisma engine binary to a path the runtime actually searches
-COPY --from=builder /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client ./apps/web/.prisma/client
+# Copy the generated Prisma client (with the linux-musl-openssl-3.0.x query
+# engine) into one of the paths Prisma actually searches at runtime under
+# Next.js standalone output. Without this, every prisma call throws
+# "Could not locate the Query Engine for runtime linux-musl-openssl-3.0.x"
+# inside Auth.js's JWT callback, which makes every authenticated request
+# crash with JWTSessionError.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client ./apps/web/.next/server/.prisma/client
 
 USER nextjs
 
