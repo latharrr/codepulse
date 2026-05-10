@@ -1,0 +1,8 @@
+{
+	email admin@codepulse.local
+}
+
+15-206-168-222.sslip.io {
+	encode zstd gzip
+	reverse_proxy web:3000
+}

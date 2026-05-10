@@ -26,13 +26,27 @@ services:
       timeout: 5s
       retries: 5
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: always
-    ports:
-      - "80:3000"
+    expose:
+      - "3000"
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-codepulse}:${POSTGRES_PASSWORD:-codepulse_prod_password}@postgres:5432/${POSTGRES_DB:-codepulse_db}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-codepulse_redis_password}@redis:6379
@@ -85,3 +99,5 @@ volumes:
   postgres_data:
   redis_data:
   snapshots:
+  caddy_data:
+  caddy_config:
