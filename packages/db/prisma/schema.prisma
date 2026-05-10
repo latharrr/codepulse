@@ -4,7 +4,12 @@
 // RLS policies are prepared conceptually; not enforced in MVP to reduce complexity.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev; "linux-musl-openssl-3.0.x" for Alpine 3.17+
+  // (where node:20-alpine3.18 lives). Without this, prisma generate only
+  // emits the host engine and the Docker image ships without the runtime
+  // binary it needs.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
