@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { signIn } from '@/auth';
+import { prisma } from '@codepulse/db';
+import { getOrCreateDefaultInstitution } from '@/lib/institution';
 
 export const metadata: Metadata = {
   title: 'Sign In',
@@ -98,36 +100,93 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Dev Bypass Sign-in */}
-          {process.env.NODE_ENV !== 'production' && (
-            <div className="mt-6 border-t border-white/20 pt-6">
-              <p className="mb-4 text-center text-xs font-semibold text-white/50 uppercase tracking-wider">
-                Development Only
-              </p>
+          {/* Demo Bypass — TEMPORARY: remove after the senior-faculty demo */}
+          <div className="mt-6 border-t border-white/20 pt-6">
+            <p className="mb-3 text-center text-xs font-semibold text-yellow-200/80 uppercase tracking-wider">
+              Demo Quick Access
+            </p>
+            <div className="grid grid-cols-2 gap-2">
               <form
-                action={async (formData) => {
+                action={async () => {
                   'use server';
-                  const email = formData.get('email') as string;
-                  await signIn('credentials', { email, redirectTo: '/dashboard' });
+                  await signIn('credentials', {
+                    email: 'deepanshulathar@gmail.com',
+                    redirectTo: '/admin',
+                  });
                 }}
-                className="flex gap-2"
               >
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="dev@lpu.ac.in"
-                  className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 ring-1 ring-white/20 focus:outline-none focus:ring-white/50"
-                  required
-                />
                 <button
                   type="submit"
-                  className="rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+                  className="w-full rounded-lg bg-white/15 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
                 >
-                  Bypass
+                  Enter as Admin
+                </button>
+              </form>
+              <form
+                action={async () => {
+                  'use server';
+                  // Ensure the demo student exists with full onboarding data
+                  // so the demo lands on /dashboard, not /onboarding.
+                  const institution = await getOrCreateDefaultInstitution();
+                  await prisma.user.upsert({
+                    where: { email: 'aarav.sharma@lpu.in' },
+                    update: {
+                      regno: '12420001',
+                      fullName: 'Aarav Sharma',
+                      branch: 'CSE',
+                      section: 'K21',
+                      batchYear: 2024,
+                      currentYear: 1,
+                    },
+                    create: {
+                      email: 'aarav.sharma@lpu.in',
+                      regno: '12420001',
+                      fullName: 'Aarav Sharma',
+                      branch: 'CSE',
+                      section: 'K21',
+                      batchYear: 2024,
+                      currentYear: 1,
+                      role: 'STUDENT',
+                      institutionId: institution.id,
+                    },
+                  });
+                  await signIn('credentials', {
+                    email: 'aarav.sharma@lpu.in',
+                    redirectTo: '/dashboard',
+                  });
+                }}
+              >
+                <button
+                  type="submit"
+                  className="w-full rounded-lg bg-white/15 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
+                >
+                  Enter as Student
                 </button>
               </form>
             </div>
-          )}
+            <form
+              action={async (formData) => {
+                'use server';
+                const email = formData.get('email') as string;
+                await signIn('credentials', { email, redirectTo: '/dashboard' });
+              }}
+              className="mt-3 flex gap-2"
+            >
+              <input
+                type="email"
+                name="email"
+                placeholder="custom@email.com"
+                className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder-white/40 ring-1 ring-white/20 focus:outline-none focus:ring-white/50"
+                required
+              />
+              <button
+                type="submit"
+                className="rounded-lg bg-white/20 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/30"
+              >
+                Go
+              </button>
+            </form>
+          </div>
 
           <p className="mt-6 text-center text-xs text-white/40">
             Personal Gmail and organization Google accounts are supported.
