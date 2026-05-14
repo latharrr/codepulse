@@ -83,12 +83,14 @@ export async function completeOnboarding(
   }
 
   // ── Upsert user profile ────────────────────────────────────
+  // Do NOT reassign `institutionId` on update — an admin may have moved
+  // this user; preserve their existing institution. Only set it on first
+  // sign-in (handled in ensureApplicationUser).
   try {
     const user = await prisma.user.update({
       where: { id: session.user.id },
       data: {
         email,
-        institutionId: institution.id,
         regno: regnoResult.regno,
         branch: parsed.data.branch,
         section: parsed.data.section ?? null,
@@ -108,6 +110,21 @@ export async function completeOnboarding(
     });
   } catch (e) {
     console.error('Onboarding upsert failed:', e);
+    // Two users racing for the same regno collide on the
+    // [institutionId, regno] unique constraint — return a field-level
+    // error so the form can surface it.
+    if (
+      typeof e === 'object' &&
+      e !== null &&
+      'code' in e &&
+      (e as { code?: string }).code === 'P2002'
+    ) {
+      return {
+        ok: false,
+        error: 'This registration number is already linked to another account.',
+        fieldErrors: { regno: 'Registration number already in use.' },
+      };
+    }
     return { ok: false, error: 'Failed to save profile. Please try again.' };
   }
 

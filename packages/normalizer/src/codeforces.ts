@@ -102,8 +102,11 @@ export class CodeforcesNormalizer implements ProfileNormalizer {
       solvedEasy,
       solvedMedium,
       solvedHard,
-      contestRating: info.rating || 0,
-      peakRating: info.maxRating || 0,
+      // Use ?? so a genuine rating of 0 (impossible on CF, but defensive)
+      // is preserved, and a missing/undefined rating becomes null rather
+      // than being misrepresented as "rated 0".
+      contestRating: info.rating ?? null,
+      peakRating: info.maxRating ?? null,
       contestsAttended: ratingHistory.length,
       topicMastery: topics,
       activeDays90,

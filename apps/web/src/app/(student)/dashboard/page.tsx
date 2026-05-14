@@ -54,6 +54,12 @@ export default async function DashboardPage() {
   const metrics = user.metrics;
   const campusRank = user.ranks[0];
 
+  // Worker race: a user just verified their first handle but the fetch /
+  // normalize / score pipeline hasn't completed yet. Tell them so the empty
+  // dashboard isn't mistaken for a permanent state.
+  const isSyncingFirstMetrics =
+    user.handles.length > 0 && metrics.length === 0 && !score;
+
   const totalSolved = metrics.reduce(
     (acc: number, m) =>
       acc + (m.solvedEasy || 0) + (m.solvedMedium || 0) + (m.solvedHard || 0),
@@ -90,6 +96,20 @@ export default async function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+        {isSyncingFirstMetrics && (
+          <div
+            role="status"
+            className="rounded-2xl border border-blue-500/20 bg-blue-500/10 px-5 py-4 text-sm text-blue-200"
+          >
+            <p className="font-semibold">Syncing your first stats…</p>
+            <p className="mt-1 text-blue-200/80">
+              Your handles are verified — we&apos;re pulling activity now. This
+              usually takes a few minutes. Refresh the page after a short
+              while to see your CodePulse score.
+            </p>
+          </div>
+        )}
+
         {/* Main Hero Score Section */}
         <section className="grid gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2 relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-1 ring-1 ring-white/10 shadow-2xl">
@@ -106,7 +126,7 @@ export default async function DashboardPage() {
                   </span>
                 </div>
                 <div className="mt-2 flex items-baseline gap-4">
-                  <h1 className="text-8xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-white via-blue-100 to-blue-400 drop-shadow-sm">
+                  <h1 className="text-6xl sm:text-7xl lg:text-8xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-white via-blue-100 to-blue-400 drop-shadow-sm">
                     {score ? Math.round(Number(score.codepulseScore)) : '0'}
                   </h1>
                   <span className="text-xl font-medium text-slate-500">/ 100</span>

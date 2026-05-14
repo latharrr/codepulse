@@ -57,11 +57,15 @@ export default function HomePage() {
         </p>
 
         <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          {/* Single CTA — middleware routes authenticated admins to /admin and
+              students to /dashboard, so we don't need a separate Admin link
+              on the public landing page (which previously looked like a
+              discovery surface for the admin console). */}
           <Link
             href="/login"
             className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-brand-navy shadow-lg transition-all hover:bg-white/90 hover:shadow-xl hover:-translate-y-0.5"
           >
-            Sign in with Google
+            Sign in to CodePulse
             <svg
               className="h-4 w-4"
               viewBox="0 0 24 24"
@@ -71,12 +75,6 @@ export default function HomePage() {
             >
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
-          </Link>
-          <Link
-            href="/admin"
-            className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-6 py-3 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/20 hover:-translate-y-0.5"
-          >
-            Admin Console
           </Link>
         </div>
       </div>

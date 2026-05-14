@@ -17,8 +17,11 @@ import {
 import { getOrCreateDefaultInstitution } from '@/lib/institution';
 
 async function findUserByEmail(email: string) {
-  return prisma.user.findFirst({
-    where: { email: { equals: normalizeEmail(email), mode: 'insensitive' } },
+  // email column is `@unique` and we always write normalized values, so
+  // a direct findUnique is both faster and avoids the case where two rows
+  // exist with different casings (would be silently returned by findFirst).
+  return prisma.user.findUnique({
+    where: { email: normalizeEmail(email) },
   });
 }
 
@@ -100,17 +103,45 @@ export const {
         token.email = normalizedEmail;
 
         try {
-          const dbUser = await prisma.user.findFirst({
-            where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-            select: { id: true, role: true, regno: true, institutionId: true },
+          const dbUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: {
+              id: true,
+              role: true,
+              regno: true,
+              institutionId: true,
+              status: true,
+            },
           });
-          if (dbUser) {
-            token.userId = dbUser.id;
-            token.role = dbUser.role;
-            token.regno = dbUser.regno;
-            token.institutionId = dbUser.institutionId;
-            token.onboardingComplete = isPrivilegedRole(dbUser.role) || !!dbUser.regno;
+
+          if (!dbUser) {
+            // User row was deleted but the JWT still references it. Clear the
+            // privileged fields so middleware treats the session as logged-out.
+            token.userId = '';
+            token.role = '';
+            token.regno = null;
+            token.institutionId = '';
+            token.onboardingComplete = false;
+            return token;
           }
+
+          // Suspended / deleted users must lose their privileged context on
+          // every JWT refresh. Without this they keep their session until
+          // the token's natural expiry.
+          if (dbUser.status !== 'ACTIVE') {
+            token.userId = '';
+            token.role = '';
+            token.regno = null;
+            token.institutionId = '';
+            token.onboardingComplete = false;
+            return token;
+          }
+
+          token.userId = dbUser.id;
+          token.role = dbUser.role;
+          token.regno = dbUser.regno;
+          token.institutionId = dbUser.institutionId;
+          token.onboardingComplete = isPrivilegedRole(dbUser.role) || !!dbUser.regno;
         } catch (err) {
           // DB unavailable — return the stale token so the session stays
           // valid rather than crashing every authenticated request.
@@ -121,18 +152,25 @@ export const {
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.userId as string;
-        session.user.role = token.role as string;
-        session.user.regno = token.regno as string;
-        session.user.institutionId = token.institutionId as string;
-        session.user.onboardingComplete = token.onboardingComplete as boolean;
+        // Empty strings (set in the jwt callback when the user no longer
+        // exists or is suspended) cascade through to route handlers, which
+        // should always check `session.user.id` before trusting the session.
+        session.user.id = (token.userId as string) ?? '';
+        session.user.role = (token.role as string) ?? '';
+        session.user.regno = (token.regno as string | null) ?? null;
+        session.user.institutionId = (token.institutionId as string) ?? '';
+        session.user.onboardingComplete = Boolean(token.onboardingComplete);
       }
       return session;
     },
     async signIn({ user, account }) {
-      // Auto-provision user on Google sign-in. Any Google account is allowed.
-      if (account?.provider === 'google' && user.email) {
+      // Google must provide an email for us to provision an account.
+      if (account?.provider === 'google') {
+        if (!user.email) return false;
         const dbUser = await ensureApplicationUser(user.email, user.name);
+        // Block suspended / deleted users at the door so they never see
+        // a redirect-to-/dashboard flicker.
+        if (dbUser.status !== 'ACTIVE') return false;
         user.id = dbUser.id;
         user.email = dbUser.email;
         user.name = dbUser.fullName ?? user.name ?? null;
@@ -140,8 +178,14 @@ export const {
       return true;
     },
     async redirect({ url, baseUrl }) {
+      // Only allow relative paths or same-origin URLs — never honor an
+      // attacker-supplied off-site callbackUrl.
       if (url.startsWith('/')) return `${baseUrl}${url}`;
-      if (new URL(url).origin === baseUrl) return url;
+      try {
+        if (new URL(url).origin === baseUrl) return url;
+      } catch {
+        /* fall through */
+      }
       return baseUrl;
     },
   },

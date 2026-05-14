@@ -11,4 +11,5 @@ export { PlatformAdapter, RawProfile, AdapterError, AdapterHealthCheck } from '.
 export { GitHubAdapter } from './github';
 export { CodeforcesAdapter } from './codeforces';
 export { LeetCodeAdapter } from './leetcode';
+export { bioContainsToken } from './verify';
 export * from './snapshot-store';

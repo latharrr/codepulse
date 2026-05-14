@@ -8,6 +8,7 @@
  * Students must temporarily set their CF firstName to the token, then revert.
  */
 import { PlatformAdapter, RawProfile, AdapterError, AdapterHealthCheck } from './types';
+import { bioContainsToken } from './verify';
 import { createLogger } from '@codepulse/config';
 
 const logger = createLogger('adapter:codeforces');
@@ -103,7 +104,10 @@ export class CodeforcesAdapter implements PlatformAdapter {
       const firstName: string =
         (((result.result as unknown[])[0] as Record<string, unknown>)
           ?.firstName as string) ?? '';
-      return firstName.includes(token);
+      // bioContainsToken rejects an empty token, which was the bug:
+      // `''.includes('')` === true, so users with no firstName set were
+      // auto-verified for any token.
+      return bioContainsToken(firstName, token);
     } catch {
       return false;
     }

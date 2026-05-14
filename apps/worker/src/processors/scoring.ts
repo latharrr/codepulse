@@ -20,20 +20,33 @@ export async function recomputeScoreProcessor(job: Job<RecomputeScoreJob>) {
   const queues = getQueues();
 
   try {
-    // 1. Fetch all normalized metrics for this user
-    const metricRows = await prisma.normalizedMetric.findMany({
-      where: { userId },
+    // 1. Fetch handles + metrics together. Only ACTIVE + VERIFIED handles
+    // contribute to the score — a metric row from a now-flagged or dead
+    // handle would otherwise keep boosting the user's score.
+    const verifiedHandles = await prisma.platformHandle.findMany({
+      where: { userId, status: 'ACTIVE', verificationState: 'VERIFIED' },
+      select: { platform: true },
+    });
+    const verifiedPlatforms = new Set(verifiedHandles.map((h) => h.platform));
+
+    const allHandles = await prisma.platformHandle.count({
+      where: { userId, status: 'ACTIVE' },
     });
 
-    // 2. Fetch handle counts to compute verificationMult
-    const [totalHandles, verifiedHandles] = await Promise.all([
-      prisma.platformHandle.count({ where: { userId, status: 'ACTIVE' } }),
-      prisma.platformHandle.count({
-        where: { userId, status: 'ACTIVE', verificationState: 'VERIFIED' },
-      }),
-    ]);
+    // Only pull metrics whose handle is currently verified.
+    const metricRows = verifiedPlatforms.size
+      ? await prisma.normalizedMetric.findMany({
+          where: {
+            userId,
+            platform: { in: Array.from(verifiedPlatforms) },
+          },
+        })
+      : [];
+
     const verificationMult =
-      totalHandles > 0 ? Math.max(0.5, verifiedHandles / totalHandles) : 0.5;
+      allHandles > 0
+        ? Math.max(0.5, verifiedHandles.length / allHandles)
+        : 0.5;
 
     // 3. Cast Prisma rows to NormalizedMetric shape the engine expects
     const metrics = metricRows.map((m) => {

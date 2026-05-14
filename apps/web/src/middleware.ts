@@ -22,9 +22,15 @@ export async function middleware(req: NextRequest) {
     raw: false,
   });
   const { pathname } = req.nextUrl;
-  const isAdmin = isPrivilegedRole(token?.role as string | undefined);
+  // Treat tokens with an empty userId / role as effectively unauthenticated.
+  // The jwt callback clears these fields when the underlying DB user is
+  // deleted or moves to SUSPENDED/DELETED status.
+  const tokenUserId = (token?.userId as string | undefined) ?? '';
+  const tokenRole = (token?.role as string | undefined) ?? '';
+  const hasValidToken = !!token && !!tokenUserId && !!tokenRole;
+  const isAdmin = hasValidToken && isPrivilegedRole(tokenRole);
   const signedInHome = isAdmin
-    ? getHomePathForRole(token?.role as string | undefined)
+    ? getHomePathForRole(tokenRole)
     : token?.onboardingComplete
       ? '/dashboard'
       : '/onboarding';
@@ -39,14 +45,14 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth')
   ) {
-    if (token && (pathname === '/' || pathname.startsWith('/login'))) {
+    if (hasValidToken && (pathname === '/' || pathname.startsWith('/login'))) {
       return NextResponse.redirect(new URL(signedInHome, req.nextUrl));
     }
     return NextResponse.next();
   }
 
   // Protected paths
-  if (!token) {
+  if (!hasValidToken) {
     const loginUrl = new URL('/login', req.nextUrl);
     loginUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(loginUrl);

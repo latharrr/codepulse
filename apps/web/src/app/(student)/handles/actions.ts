@@ -1,6 +1,7 @@
 'use server';
 
 import crypto from 'crypto';
+import { z } from 'zod';
 import { auth } from '@/auth';
 import { queues } from '@/lib/queues';
 import { prisma } from '@codepulse/db';
@@ -12,13 +13,37 @@ export type HandleActionResult =
   | { ok: true; message: string; verificationToken?: string | null }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
+const HandleIdSchema = z.string().uuid();
+
 function createVerificationToken() {
   return `cp_${crypto.randomBytes(8).toString('hex')}`;
 }
 
+/**
+ * Resolves the current authenticated, ACTIVE student.
+ * Returns null if the user is signed-out, suspended, or deleted —
+ * which is the same code path the UI handles ("Unauthorized").
+ */
 async function requireUserId(): Promise<string | null> {
   const session = await auth();
-  return session?.user?.id ?? null;
+  const userId = session?.user?.id;
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { status: true },
+  });
+  if (!user || user.status !== 'ACTIVE') return null;
+  return userId;
+}
+
+function isUniqueConstraintError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: string }).code === 'P2002'
+  );
 }
 
 async function enqueueFetch(
@@ -173,9 +198,15 @@ export async function linkHandle(
     };
   } catch (error) {
     console.error('Handle link failed:', error);
+    if (isUniqueConstraintError(error)) {
+      return {
+        ok: false,
+        error: 'That platform handle is already linked to another account.',
+      };
+    }
     return {
       ok: false,
-      error: 'Failed to link handle. Check Redis/Postgres and try again.',
+      error: 'Could not link handle right now. Please retry in a moment.',
     };
   }
 }
@@ -184,9 +215,17 @@ export async function syncHandle(handleId: string): Promise<HandleActionResult> 
   const userId = await requireUserId();
   if (!userId) return { ok: false, error: 'Unauthorized. Please sign in again.' };
 
+  // Reject obviously-malformed IDs before Prisma throws — Prisma rejects
+  // non-UUIDs with a generic error that would be caught below and shown as
+  // "Could not queue sync".
+  const parsedId = HandleIdSchema.safeParse(handleId);
+  if (!parsedId.success) {
+    return { ok: false, error: 'Handle not found.' };
+  }
+
   try {
     const handle = await prisma.platformHandle.findUnique({
-      where: { id: handleId },
+      where: { id: parsedId.data },
     });
 
     if (!handle || handle.userId !== userId) {
@@ -244,7 +283,8 @@ export async function syncHandle(handleId: string): Promise<HandleActionResult> 
     console.error('Handle sync failed:', error);
     return {
       ok: false,
-      error: 'Failed to queue handle work. Check Redis/Postgres and try again.',
+      error:
+        'Could not queue the verification check. Please retry in a moment.',
     };
   }
 }

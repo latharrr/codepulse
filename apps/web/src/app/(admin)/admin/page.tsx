@@ -1,4 +1,4 @@
-import { auth } from '@/auth';
+import { auth, signOut } from '@/auth';
 import { prisma } from '@codepulse/db';
 import { redirect } from 'next/navigation';
 import { triggerRankRecompute, triggerSyncAll } from './actions';
@@ -18,9 +18,20 @@ export default async function AdminDashboard({
     redirect('/dashboard');
   }
 
+  // SUPER_ADMIN sees the entire platform; a regular ADMIN is scoped to their
+  // own institution so they never see cross-tenant counts.
+  const isSuperAdmin = session.user.role === 'SUPER_ADMIN';
+  const institutionId = session.user.institutionId;
+  const userFilter = isSuperAdmin
+    ? { role: 'STUDENT' as const }
+    : { role: 'STUDENT' as const, institutionId };
+  const handleFilter = isSuperAdmin
+    ? {}
+    : { user: { institutionId } };
+
   const stats = await prisma.$transaction([
-    prisma.user.count({ where: { role: 'STUDENT' } }),
-    prisma.platformHandle.count(),
+    prisma.user.count({ where: userFilter }),
+    prisma.platformHandle.count({ where: handleFilter }),
     prisma.institution.count(),
   ]);
 
@@ -33,7 +44,27 @@ export default async function AdminDashboard({
 
   return (
     <div className="p-8">
-      <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {session.user.email}
+          </span>
+          <form
+            action={async () => {
+              'use server';
+              await signOut({ redirectTo: '/login' });
+            }}
+          >
+            <button
+              type="submit"
+              className="rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted/50"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
+      </div>
 
       {statusMessage && (
         <div className="mb-6 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700">
@@ -77,6 +108,7 @@ export default async function AdminDashboard({
           </form>
           <a
             href="/api/admin/export"
+            download="codepulse-students.csv"
             className="rounded-md border px-4 py-2 text-sm font-medium"
           >
             Export Reports

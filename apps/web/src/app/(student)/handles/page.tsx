@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Code2, Github, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { linkHandle, syncHandle } from './actions';
 import type { Platform } from '@codepulse/types';
 
@@ -39,29 +41,40 @@ const platforms = [
 ];
 
 export default function HandlesPage() {
+  const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [handles, setHandles] = useState<Record<string, string>>({});
   const [existingHandles, setExistingHandles] = useState<ExistingHandle[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   const loadExistingHandles = useCallback(async () => {
     const response = await fetch('/api/student/handles');
-    const data = await response.json();
 
+    if (response.status === 401) {
+      // Session expired or user was suspended — send them to /login rather
+      // than showing a misleading "Unauthorized" banner on the handles page.
+      router.replace('/login?callbackUrl=/handles');
+      return;
+    }
+
+    const data = await response.json();
     if (!response.ok) {
       throw new Error(data?.error ?? 'Failed to fetch handles');
     }
 
     setExistingHandles(data);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
-    loadExistingHandles().catch((error) => {
-      setNotice({
-        tone: 'error',
-        text: error instanceof Error ? error.message : 'Failed to fetch handles',
-      });
-    });
+    loadExistingHandles()
+      .catch((error) => {
+        setNotice({
+          tone: 'error',
+          text: error instanceof Error ? error.message : 'Failed to fetch handles',
+        });
+      })
+      .finally(() => setIsInitialLoading(false));
   }, [loadExistingHandles]);
 
   const handlesByPlatform = useMemo(() => {
@@ -135,18 +148,18 @@ export default function HandlesPage() {
             <span className="text-lg font-bold tracking-tight text-white">CodePulse</span>
           </div>
           <nav className="flex items-center gap-2">
-            <a
+            <Link
               href="/dashboard"
               className="rounded-lg px-4 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
             >
               Dashboard
-            </a>
-            <a
+            </Link>
+            <Link
               href="/handles"
               className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
             >
               Handles
-            </a>
+            </Link>
           </nav>
         </div>
       </header>
@@ -174,6 +187,16 @@ export default function HandlesPage() {
           </div>
         )}
 
+        {isInitialLoading ? (
+          <div className="grid gap-6">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-44 animate-pulse rounded-3xl border border-white/5 bg-slate-900/70"
+              />
+            ))}
+          </div>
+        ) : (
         <div className="grid gap-6">
           {platforms.map(({ id, label, Icon, hint }) => {
             const existing = handlesByPlatform.get(id);
@@ -281,6 +304,7 @@ export default function HandlesPage() {
             );
           })}
         </div>
+        )}
       </main>
     </div>
   );

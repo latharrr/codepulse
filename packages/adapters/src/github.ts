@@ -12,6 +12,7 @@ import {
   AdapterError,
   AdapterHealthCheck,
 } from './types';
+import { bioContainsToken } from './verify';
 import { createLogger } from '@codepulse/config';
 
 const logger = createLogger('adapter:github');
@@ -189,8 +190,7 @@ export class GitHubAdapter implements PlatformAdapter {
       });
       if (!response.ok) return false;
       const result = await response.json() as { data?: { user?: { bio?: string } } };
-      const bio = result?.data?.user?.bio ?? '';
-      return bio.includes(token);
+      return bioContainsToken(result?.data?.user?.bio, token);
     } catch {
       return false;
     }

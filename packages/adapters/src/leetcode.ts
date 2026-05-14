@@ -12,6 +12,7 @@ import {
   AdapterError,
   AdapterHealthCheck,
 } from './types';
+import { bioContainsToken } from './verify';
 import { createLogger } from '@codepulse/config';
 
 const logger = createLogger('adapter:leetcode');
@@ -163,8 +164,7 @@ export class LeetCodeAdapter implements PlatformAdapter {
       });
       if (!response.ok) return false;
       const result = await response.json() as { data?: { matchedUser?: { profile?: { aboutMe?: string } } } };
-      const aboutMe = result?.data?.matchedUser?.profile?.aboutMe ?? '';
-      return aboutMe.includes(token);
+      return bioContainsToken(result?.data?.matchedUser?.profile?.aboutMe, token);
     } catch {
       return false;
     }

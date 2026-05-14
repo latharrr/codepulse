@@ -39,6 +39,9 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
     }
 
     // Prepare groups: Map<scope_scopeValue, UserScore[]>
+    // ScopeValue for YEAR/BRANCH/SECTION is namespaced with institutionId
+    // so that two institutions sharing a branch name ("CSE") never ranked
+    // against each other. CAMPUS scope already uses institutionId directly.
     type UserScore = { id: string; score: number };
     const groups = new Map<string, UserScore[]>();
 
@@ -56,17 +59,20 @@ export async function recomputeRanksProcessor(_job: Job<RecomputeRanksJob>) {
     for (const u of usersWithScores) {
       const us = { id: u.id, score: Number(u.score!.codepulseScore) };
 
-      // CAMPUS Scope
+      // CAMPUS scopeValue IS the institutionId.
       addGroup('CAMPUS', u.institutionId, us);
 
-      // YEAR Scope
-      if (u.batchYear) addGroup('YEAR', u.batchYear.toString(), us);
-
-      // BRANCH Scope
-      if (u.branch) addGroup('BRANCH', u.branch, us);
-
-      // SECTION Scope
-      if (u.section) addGroup('SECTION', u.section, us);
+      // Prefix the other scopes with institutionId so cohorts stay
+      // tenant-isolated, e.g. "<uuid>::2024".
+      if (u.batchYear) {
+        addGroup('YEAR', `${u.institutionId}::${u.batchYear}`, us);
+      }
+      if (u.branch) {
+        addGroup('BRANCH', `${u.institutionId}::${u.branch}`, us);
+      }
+      if (u.section) {
+        addGroup('SECTION', `${u.institutionId}::${u.section}`, us);
+      }
     }
 
     const rankInputs: RankInput[] = [];
