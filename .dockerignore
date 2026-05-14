@@ -1,8 +1,8 @@
-node_modules
-.next
-dist
+**/node_modules
+**/.next
+**/dist
+**/.turbo
 .git
-.turbo
 snapshots
 scratch
 npm-debug.log
