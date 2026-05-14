@@ -23,8 +23,21 @@ let queueCache: WebQueues | null = null;
 
 function getRedisConnection() {
   if (!redisConnection) {
-    redisConnection = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
+    const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+    redisConnection = new Redis(url, {
+      // BullMQ requires maxRetriesPerRequest: null on all connections.
       maxRetriesPerRequest: null,
+      // Fail immediately when the connection is not ready rather than
+      // silently queuing commands forever — makes errors surface quickly.
+      enableOfflineQueue: false,
+      // Give up connecting after 5 s so server actions don't hang.
+      connectTimeout: 5000,
+    });
+
+    // Prevent unhandled 'error' events from crashing the process.
+    // Errors are already surfaced when individual commands reject.
+    redisConnection.on('error', (err: Error) => {
+      console.error('[queues] Redis connection error:', err.message);
     });
   }
 
