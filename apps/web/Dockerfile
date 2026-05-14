@@ -41,8 +41,18 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
-# Copy the staged Prisma engine binary to the path Prisma searches at runtime.
+# Copy the staged Prisma engine binary to EVERY path Prisma searches at
+# runtime under Next.js standalone. Without all three locations covered,
+# Prisma throws "Could not locate the Query Engine" on the first DB query.
+#
+#   apps/web/.next/server/.prisma/client  ← what the standalone runtime
+#                                            actually scans
+#   apps/web/.prisma/client               ← what `prisma generate` records
+#                                            in the client's metadata
+#   node_modules/.prisma/client           ← the canonical lookup path
+COPY --from=builder --chown=nextjs:nodejs /app/prisma-engine/ ./apps/web/.next/server/.prisma/client/
 COPY --from=builder --chown=nextjs:nodejs /app/prisma-engine/ ./apps/web/.prisma/client/
+COPY --from=builder --chown=nextjs:nodejs /app/prisma-engine/ ./node_modules/.prisma/client/
 
 USER nextjs
 
