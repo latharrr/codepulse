@@ -17,7 +17,12 @@ export async function GET() {
   }
 
   const users = await prisma.user.findMany({
-    where: { role: 'STUDENT' },
+    where: {
+      role: 'STUDENT',
+      ...(session?.user?.institutionId
+        ? { institutionId: session.user.institutionId }
+        : {}),
+    },
     orderBy: [{ batchYear: 'desc' }, { fullName: 'asc' }],
     include: {
       score: true,

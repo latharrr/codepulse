@@ -29,19 +29,16 @@ const envSchema = z.object({
     .min(32, 'AUTH_SECRET must be at least 32 characters'),
   AUTH_GOOGLE_ID: z.string().min(1, 'AUTH_GOOGLE_ID is required'),
   AUTH_GOOGLE_SECRET: z.string().min(1, 'AUTH_GOOGLE_SECRET is required'),
-  AUTH_GITHUB_ID: z.string().min(1, 'AUTH_GITHUB_ID is required'),
-  AUTH_GITHUB_SECRET: z.string().min(1, 'AUTH_GITHUB_SECRET is required'),
+  // GitHub OAuth provider removed from auth.ts — keep these optional so
+  // deployments without GitHub OAuth still start cleanly.
+  AUTH_GITHUB_ID: z.string().optional(),
+  AUTH_GITHUB_SECRET: z.string().optional(),
 
   // ── GitHub Adapter ────────────────────────────────────────────
   GITHUB_PAT_POOL: z
     .string()
     .min(1, 'GITHUB_PAT_POOL must contain at least one PAT')
     .transform((v) => v.split(',').map((t) => t.trim()).filter(Boolean)),
-
-  // ── Encryption ────────────────────────────────────────────────
-  ENCRYPTION_KEY: z
-    .string()
-    .length(64, 'ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)'),
 
   // ── Application ───────────────────────────────────────────────
   NEXT_PUBLIC_APP_URL: z

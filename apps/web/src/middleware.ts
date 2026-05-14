@@ -56,11 +56,11 @@ export async function middleware(req: NextRequest) {
     isAdmin &&
     (pathname.startsWith('/dashboard') || pathname.startsWith('/onboarding'))
   ) {
-    return NextResponse.redirect(new URL('/admin', req.url));
+    return NextResponse.redirect(new URL('/admin', req.nextUrl));
   }
 
   if (!isAdmin && pathname.startsWith('/admin')) {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
+    return NextResponse.redirect(new URL('/dashboard', req.nextUrl));
   }
 
   // Onboarding check

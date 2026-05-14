@@ -6,7 +6,6 @@
  */
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-import GitHub from 'next-auth/providers/github';
 import Credentials from 'next-auth/providers/credentials';
 import { prisma } from '@codepulse/db';
 import {
@@ -84,10 +83,6 @@ export const {
         return ensureApplicationUser(email, 'Dev User');
       },
     }),
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID!,
-      clientSecret: process.env.AUTH_GITHUB_SECRET!,
-    }),
   ],
   session: {
     strategy: 'jwt',
@@ -104,16 +99,22 @@ export const {
         const normalizedEmail = normalizeEmail(email);
         token.email = normalizedEmail;
 
-        const dbUser = await prisma.user.findFirst({
-          where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
-          select: { id: true, role: true, regno: true, institutionId: true },
-        });
-        if (dbUser) {
-          token.userId = dbUser.id;
-          token.role = dbUser.role;
-          token.regno = dbUser.regno;
-          token.institutionId = dbUser.institutionId;
-          token.onboardingComplete = isPrivilegedRole(dbUser.role) || !!dbUser.regno;
+        try {
+          const dbUser = await prisma.user.findFirst({
+            where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+            select: { id: true, role: true, regno: true, institutionId: true },
+          });
+          if (dbUser) {
+            token.userId = dbUser.id;
+            token.role = dbUser.role;
+            token.regno = dbUser.regno;
+            token.institutionId = dbUser.institutionId;
+            token.onboardingComplete = isPrivilegedRole(dbUser.role) || !!dbUser.regno;
+          }
+        } catch (err) {
+          // DB unavailable — return the stale token so the session stays
+          // valid rather than crashing every authenticated request.
+          console.error('[jwt] DB lookup failed, using stale token:', err);
         }
       }
       return token;
@@ -129,11 +130,6 @@ export const {
       return session;
     },
     async signIn({ user, account }) {
-      // GitHub sign-in is handled via separate OAuth flow for handle linking
-      if (account?.provider === 'github' && !user.email) {
-        return false;
-      }
-
       // Auto-provision user on Google sign-in. Any Google account is allowed.
       if (account?.provider === 'google' && user.email) {
         const dbUser = await ensureApplicationUser(user.email, user.name);
