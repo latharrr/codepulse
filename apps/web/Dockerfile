@@ -13,6 +13,16 @@ RUN pnpm install --frozen-lockfile
 # Generate Prisma Client
 RUN pnpm db:generate
 
+# Stage the Prisma engine binary at a predictable path.
+# We use `find` because the exact pnpm virtual-store directory name
+# (e.g. @prisma+client@5.22.0_prisma@5.22.0) can vary and glob COPY
+# is unreliable for mid-path wildcards in Docker BuildKit.
+RUN ENGINE=$(find /app -path "*/node_modules/.prisma/client/libquery_engine-linux-musl*.so.node" \
+        -not -path "*_tmp*" | head -1) && \
+    if [ -z "$ENGINE" ]; then echo "ERROR: Prisma engine not found" && exit 1; fi && \
+    mkdir -p /app/prisma-engine && cp "$ENGINE" /app/prisma-engine/ && \
+    echo "Staged: $ENGINE"
+
 # Build the web app
 RUN pnpm build --filter=@codepulse/web
 
@@ -31,13 +41,8 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
 
-# Copy the generated Prisma client (with the linux-musl-openssl-3.0.x query
-# engine) into one of the paths Prisma actually searches at runtime under
-# Next.js standalone output. Without this, every prisma call throws
-# "Could not locate the Query Engine for runtime linux-musl-openssl-3.0.x"
-# inside Auth.js's JWT callback, which makes every authenticated request
-# crash with JWTSessionError.
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client ./apps/web/.next/server/.prisma/client
+# Copy the staged Prisma engine binary to the path Prisma searches at runtime.
+COPY --from=builder --chown=nextjs:nodejs /app/prisma-engine/ ./apps/web/.prisma/client/
 
 USER nextjs
 

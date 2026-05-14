@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
-import { signIn } from '@/auth';
-import { prisma } from '@codepulse/db';
-import { getOrCreateDefaultInstitution } from '@/lib/institution';
+import { signInAsAdmin, signInAsDemoStudent, signInWithEmail } from './actions';
 
 export const metadata: Metadata = {
   title: 'Sign In',
@@ -67,15 +65,7 @@ export default function LoginPage() {
               Demo Quick Access
             </p>
             <div className="grid grid-cols-2 gap-2">
-              <form
-                action={async () => {
-                  'use server';
-                  await signIn('credentials', {
-                    email: 'deepanshulathar@gmail.com',
-                    redirectTo: '/admin',
-                  });
-                }}
-              >
+              <form action={signInAsAdmin}>
                 <button
                   type="submit"
                   className="w-full rounded-lg bg-white/15 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
@@ -83,40 +73,7 @@ export default function LoginPage() {
                   Enter as Admin
                 </button>
               </form>
-              <form
-                action={async () => {
-                  'use server';
-                  // Ensure the demo student exists with full onboarding data
-                  // so the demo lands on /dashboard, not /onboarding.
-                  const institution = await getOrCreateDefaultInstitution();
-                  await prisma.user.upsert({
-                    where: { email: 'aarav.sharma@lpu.in' },
-                    update: {
-                      regno: '12420001',
-                      fullName: 'Aarav Sharma',
-                      branch: 'CSE',
-                      section: 'K21',
-                      batchYear: 2024,
-                      currentYear: 1,
-                    },
-                    create: {
-                      email: 'aarav.sharma@lpu.in',
-                      regno: '12420001',
-                      fullName: 'Aarav Sharma',
-                      branch: 'CSE',
-                      section: 'K21',
-                      batchYear: 2024,
-                      currentYear: 1,
-                      role: 'STUDENT',
-                      institutionId: institution.id,
-                    },
-                  });
-                  await signIn('credentials', {
-                    email: 'aarav.sharma@lpu.in',
-                    redirectTo: '/dashboard',
-                  });
-                }}
-              >
+              <form action={signInAsDemoStudent}>
                 <button
                   type="submit"
                   className="w-full rounded-lg bg-white/15 px-3 py-2 text-sm font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/25"
@@ -125,14 +82,7 @@ export default function LoginPage() {
                 </button>
               </form>
             </div>
-            <form
-              action={async (formData) => {
-                'use server';
-                const email = formData.get('email') as string;
-                await signIn('credentials', { email, redirectTo: '/dashboard' });
-              }}
-              className="mt-3 flex gap-2"
-            >
+            <form action={signInWithEmail} className="mt-3 flex gap-2">
               <input
                 type="email"
                 name="email"
